@@ -39,9 +39,15 @@ fn tagging(token: &String) -> TOKEN{
 		return TOKEN{name: token.to_string(), token_type: "RPAREN".to_string()};
 	}
 	else if token == "{"{
-		return TOKEN{name: token.to_string(), token_type: "LBRACK".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "LBRACE".to_string()};
 	}
 	else if token == "}"{
+		return TOKEN{name: token.to_string(), token_type: "RBRACE".to_string()};
+	}
+	else if token == "["{
+		return TOKEN{name: token.to_string(), token_type: "LBRACK".to_string()};
+	}
+	else if token == "]"{
 		return TOKEN{name: token.to_string(), token_type: "RBRACK".to_string()};
 	}
 	else if token == "+"{
@@ -73,6 +79,9 @@ fn tagging(token: &String) -> TOKEN{
 	}
 	else if token == "\""{
 		return TOKEN{name: token.to_string(), token_type: "DOUBLEQUOTE".to_string()};
+	}
+	else if token == "&"{
+		return TOKEN{name: token.to_string(), token_type: "ADDRESSOF".to_string()};
 	}
 	else if token == "true" || token == "false" {
 		return TOKEN{name: token.to_string(), token_type: "BOOLEAN".to_string()};
@@ -136,6 +145,7 @@ fn get_offset(var_type: &Type) -> i64{
 		Type::Float => 4,
 		Type::Double => 8,
 		Type::Pointer(_) => 8,
+		Type::Array(arr_type, size) => get_offset(arr_type)*size,
 		Type::Unknown => 0,
 	}
 }
@@ -180,6 +190,7 @@ enum Type{
 	Float,
 	Double,
 	Pointer(Box<Type>),
+	Array(Box<Type>, i64),
 	Unknown,
 }
 
@@ -194,7 +205,9 @@ enum Expr {
 	Variable(String),
 	Binary(Box<Expr>,BinaryOp, Box<Expr>),
 	Call(String, Vec<Expr>),
-
+	Dereference(String),
+	AddressOf(String),
+	None,
 	Unknown,
 }
 
@@ -348,6 +361,14 @@ fn parse_primary(token: &Vec<TOKEN>)->Expr{
 			error("Not operation is not yet implemented");
 			return Expr::Unknown
 		}
+		"STAR" => {
+			let variable = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string()});
+			return Expr::Dereference(variable.name);
+		}
+		"ADDRESSOF" => {
+			let variable = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string()});
+			return Expr::AddressOf(variable.name);
+		}
 		_ => {
 			error(&format!("Expression incorrect, got {0}.... fuck you", primary.token_type));
 			return Expr::Unknown;
@@ -424,10 +445,26 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 			next_token();
 		}
 		let var_name = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string()});
-		expect(token, &TOKEN{name: "=".to_string(), token_type: "ASSIGN".to_string()});
-		let expr = parse_expression(token, 0);
+		let mut expr = Expr::None;
+		if get_token(&token).token_type == "ASSIGN"{
+			next_token();
+			expr = parse_expression(token, 0);
+		}
+		else if get_token(&token).token_type == "LBRACK"{
+			next_token();
+			let size = get_token(&token).name.parse::<i64>().unwrap();
+			next_token();
+			// expr = parse_expression(token, 0);
+			expect(token, &TOKEN{name: "]".to_string(), token_type: "RBRACK".to_string()});
+			var_type = Type::Array(Box::new(var_type), size);
+		}
+		else{
+			expr = Expr::Unknown;
+		}
 		expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string()});
-		return Statement::Declaration(var_type, var_name.name, expr);
+		let a = Statement::Declaration(var_type, var_name.name, expr);
+		println!("{:?}", a);
+		return a;
 
 	}
 	else if current_token.token_type == "RETURN"{
@@ -455,13 +492,13 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 		expect(token, &TOKEN{name: "(".to_string(), token_type: "LPAREN".to_string()});
 		let expression = parse_expression(token, 0);
 		expect(token, &TOKEN{name: ")".to_string(), token_type: "RPAREN".to_string()});
-		expect(token, &TOKEN{name: "{".to_string(), token_type: "LBRACK".to_string()});
+		expect(token, &TOKEN{name: "{".to_string(), token_type: "LBRACE".to_string()});
 		let mut body = Vec::new();
-		while get_token(token).token_type != "RBRACK"{
+		while get_token(token).token_type != "RBRACE"{
 			body.push(parse_statement(token));
 		}
 		println!("body : {:?}", body);
-		expect(token, &TOKEN{name: "}".to_string(), token_type: "RBRACK".to_string()});
+		expect(token, &TOKEN{name: "}".to_string(), token_type: "RBRACE".to_string()});
 		let idx = update_label_index();
 		match current_token.token_type.as_str(){
 			"IF"=>{return Statement::If(expression, body, idx);}
@@ -507,22 +544,48 @@ fn parse_function(token : &Vec<TOKEN>) -> Function{
 		}
 	}
 	expect(token, &TOKEN{name: ")".to_string(), token_type: "RPAREN".to_string()});
-	expect(token, &TOKEN{name: "{".to_string(), token_type: "LBRACK".to_string()});
+	expect(token, &TOKEN{name: "{".to_string(), token_type: "LBRACE".to_string()});
 	let mut body = Vec::new();
-	while get_token(token).token_type != "RBRACK"{
+	while get_token(token).token_type != "RBRACE"{
 		body.push(parse_statement(token));
 	}
-	expect(token, &TOKEN{name: "}".to_string(), token_type: "RBRACK".to_string()});
+	expect(token, &TOKEN{name: "}".to_string(), token_type: "RBRACE".to_string()});
 	return Function{name: fn_name.name, args: arguments, body: body};
 }
 
 fn gen_call(name: &String, args: &Vec<Expr>, variable_table: &mut VarTable, asm_struct: &mut AssemblyStructure){
 	if args.len() > 0{
-		let regs = vec!["edi", "esi", "edx", "ecx", "r8d", "r9d"];
+		let regs64 = vec!["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
+		let regs32 = vec!["edi", "esi", "edx", "ecx", "r8d", "r9d"];
 		for i in 0..args.len(){
     		gen_expr(&args[i], variable_table, asm_struct);
-    		asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov {}, eax\n", regs[i]));
+    		match &args[i]{
+    			Expr::AddressOf(_) => {
+    				asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov {}, rax\n", regs64[i]));
+    			}
+    			Expr::Variable(name)=>{
+    				let var_type = variable_table.symbole_table.get(name).unwrap().var_type.clone();
+    				match var_type{
+    					Type::Array(_, _) => {
+	    					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov {}, rax\n", regs64[i]));
+    					}
+    					_ => {
+	    					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov {}, eax\n", regs32[i]));
+    					}
+    				}
+    				println!("!!!!!!!!!variable type : {:?}", var_type);
+    			}
+    			_ => {
+	    			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov {}, eax\n", regs32[i]));
+    			}
+    		}
 		}
+	}
+	// since printf is a function that takes variadic arguments, eax needs to hold the number of floating point numbers in the arguments
+	// i did not yet implement type checking to detect variadics so we manually check if the function is printf and allways null out eax
+	// since we also don't support floats yet
+	if name == "printf"{
+		asm_struct.text[asm_struct.function_index].body.push_str("    xor eax, eax\n");
 	}
 	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    call {}\n", name));
 }
@@ -590,6 +653,9 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
         			Type::Pointer(_) => {
         				asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov rax, QWORD PTR [rbp {}]\n", var_info.offset));
         			}
+        			Type::Array(_, _) => {
+        				asm_struct.text[asm_struct.function_index].body.push_str(&format!("    lea rax, [rbp {}]\n", var_info.offset));
+        			}
         			_ =>{
         				error(&format!("Variable Type {:?} Not Yet Implemented", var_info.var_type));
         			}
@@ -607,11 +673,21 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
         	asm_struct.data.push_str(&format!("    .string \"{}\"\n", string));
         	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov rax, OFFSET FLAT: .LC{}\n", index));
         },
+        Expr::Dereference(name)=>{
+        	let variable = variable_table.symbole_table.get(name);
+        	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov rax, QWORD PTR [rbp {}]\n", variable.unwrap().offset));
+        	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    movzx eax, BYTE PTR [rax]\n"));
+        	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    movsx eax, al\n"));
+        }
+        Expr::AddressOf(name) => {
+        	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    lea rax, [rbp-8]\n"));
+        }
         Expr::Unknown => {
         	error("Unknown expression");
         }
+        Expr::None=>{println!("encountered expr none, do nothing for now");}
         _ => {
-        	error("Expr Not yet implemented");
+        	error(&format!("Expr \"{:?}\" Not yet implemented", expr));
         }
     }
 }
@@ -629,8 +705,14 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
             variable_table.stack_offset -= get_offset(var_type);
             variable_table.symbole_table.insert(name.clone(), VarInfo{var_type: var_type.clone(), offset: variable_table.stack_offset});
             match var_type{
-            	Type::Bool=>{
+            	Type::Bool | Type::Char => {
 					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov BYTE PTR [rbp {}], al\n", variable_table.stack_offset));
+            	}
+            	Type::Pointer(_) => {
+					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov QWORD PTR [rbp {}], rax\n", variable_table.stack_offset));
+            	}
+            	Type::Array(_,_) => {
+            		println!("array declaraion, do nothing");
             	}
             	_ =>{
 					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov [rbp {}], eax\n", variable_table.stack_offset));
@@ -848,7 +930,7 @@ fn main(){
 	}
 	let mut data = raw_data.chars();
 
-	let tokens = ["int", "double", "char", "float", "bool", "return", ";", "{", "}", "(", ")", "+", "-", "*", "/", "=", "!", ",", "\'", "\"", "true", "false", ".", "#", "define", "include", "<", ">", "if", "while", "for"];
+	let tokens = ["int", "double", "char", "float", "bool", "return", ";", "{", "}", "(", ")", "[", "]", "+", "-", "*", "/", "=", "!", ",", "\'", "\"", "&", "true", "false", ".", "#", "define", "include", "<", ">", "if", "while", "for"];
 
 	let mut found_tokens:Vec<TOKEN> = Vec::new();
 
