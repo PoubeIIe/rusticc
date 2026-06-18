@@ -23,6 +23,7 @@ struct TOKEN{
 
 static mut TOKEN_INDEX: i64 = 0;
 static mut STRING_INDEX: i64 = 0;
+static mut LABEL_INDEX: i64 = 0;
 
 fn tagging(token: &String) -> TOKEN{
 	if is_type(&token){
@@ -203,7 +204,8 @@ enum Statement {
 	Return(Expr),
 	Call(String, Vec<Expr>),
 	Reassign(String, Expr),
-	If(Expr, Vec<Statement>),
+	If(Expr, Vec<Statement>, i64),
+	While(Expr, Vec<Statement>, i64),
 	Unknown,
 }
 
@@ -282,6 +284,13 @@ fn update_string_index()->i64{
 	unsafe{
 		let index = STRING_INDEX;
 		STRING_INDEX+=1;
+		return index;
+	}
+}
+fn update_label_index()->i64{
+	unsafe{
+		let index = LABEL_INDEX;
+		LABEL_INDEX+=1;
 		return index;
 	}
 }
@@ -379,8 +388,13 @@ fn parse_expression(token: &Vec<TOKEN>, min_precedence: u8) -> Expr{
 				else{error("Expected comparison, got assign"); BinaryOp::UNKNOWN}
 			},
 			"LCHEV"=>{
-				error("Lesser than operation not yet implemented");
-				BinaryOp::UNKNOWN
+				if get_token(token).token_type == "ASSIGN"{
+					next_token();
+					BinaryOp::LESSEREQ
+				}
+				else{
+					BinaryOp::LESSER
+				}
 			}
 			"RCHEV"=>{
 				if get_token(token).token_type == "ASSIGN"{
@@ -409,9 +423,7 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 			var_type = Type::Pointer(Box::new(var_type));
 			next_token();
 		}
-		println!("got here : {}", get_token(&token).name);
 		let var_name = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string()});
-		println!("not here");
 		expect(token, &TOKEN{name: "=".to_string(), token_type: "ASSIGN".to_string()});
 		let expr = parse_expression(token, 0);
 		expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string()});
@@ -439,18 +451,23 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 		error(&format!("Expected LPAREN, got {} : {}", get_token(token).token_type, get_token(token).name));
 		return Statement::Unknown;
 	}
-	else if current_token.token_type == "IF"{
+	else if current_token.token_type == "IF" || current_token.token_type == "WHILE"{
 		expect(token, &TOKEN{name: "(".to_string(), token_type: "LPAREN".to_string()});
 		let expression = parse_expression(token, 0);
 		expect(token, &TOKEN{name: ")".to_string(), token_type: "RPAREN".to_string()});
 		expect(token, &TOKEN{name: "{".to_string(), token_type: "LBRACK".to_string()});
-		let mut if_body = Vec::new();
+		let mut body = Vec::new();
 		while get_token(token).token_type != "RBRACK"{
-			if_body.push(parse_statement(token));
+			body.push(parse_statement(token));
 		}
-		println!("if body : {:?}", if_body);
+		println!("body : {:?}", body);
 		expect(token, &TOKEN{name: "}".to_string(), token_type: "RBRACK".to_string()});
-		return Statement::If(expression, if_body);
+		let idx = update_label_index();
+		match current_token.token_type.as_str(){
+			"IF"=>{return Statement::If(expression, body, idx);}
+			"WHILE"=>{return Statement::While(expression, body, idx);}
+			_ => {error("I really should move away from string token type and implement an enum");Statement::Unknown}
+		}
 	}
 	else{
 		error(&format!("Invalid token found in statement : {} : {}", current_token.token_type, current_token.name));
@@ -628,7 +645,7 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
             let var_offset = variable_table.symbole_table.get(name).unwrap().offset;
 			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov [rbp {}], eax\n", var_offset));
         }
-        Statement::If(condition, statement_body) => {
+        Statement::If(condition, statement_body, index) => {
         	match condition{
         		Expr::Variable(name) => {
             		let var_offset = variable_table.symbole_table.get(name).unwrap().offset;
@@ -645,12 +662,25 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
         			error("Invalid condition in if statement");
         		}
         	}
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    je .L{}\n", 0));
+			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    je .L{}\n", index));
 			for if_body_statement in statement_body{
 				println!("statement : {:?}\n", if_body_statement);
 				gen_statement(if_body_statement, variable_table, asm_struct);
 			}
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!(".L{}:\n", 0));
+			asm_struct.text[asm_struct.function_index].body.push_str(&format!(".L{}:\n", index));
+        }
+        Statement::While(condition, statement_body, index)=>{
+        	let first_index = index;
+			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    jmp .L{}\n", first_index));
+        	let second_index = update_label_index();
+			asm_struct.text[asm_struct.function_index].body.push_str(&format!(".L{}:\n", second_index));
+        	for if_body_statement in statement_body{
+				println!("statement : {:?}\n", if_body_statement);
+				gen_statement(if_body_statement, variable_table, asm_struct);
+			}
+			asm_struct.text[asm_struct.function_index].body.push_str(&format!(".L{}:\n", first_index));
+            gen_expr(condition, variable_table, asm_struct);
+			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    jne .L{}\n", second_index));
         }
         _ => {
         	error("Statement Not Yet Implemented");
