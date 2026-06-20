@@ -110,6 +110,9 @@ fn tagging(token: &String) -> TOKEN{
 	else if token == "for"{
 		return TOKEN{name: token.to_string(), token_type: "FOR".to_string()};
 	}
+	else if token == "struct"{
+		return TOKEN{name: token.to_string(), token_type: "STRUCT".to_string()};
+	}
 	else {
 		return TOKEN{name: token.to_string(), token_type: "NAME".to_string()};
 	}
@@ -146,6 +149,7 @@ fn get_offset(var_type: &Type) -> i64{
 		Type::Double => 8,
 		Type::Pointer(_) => 8,
 		Type::Array(arr_type, size) => get_offset(arr_type)*size,
+		Type::Struct(name) => 0,
 		Type::Unknown => 0,
 	}
 }
@@ -191,6 +195,7 @@ enum Type{
 	Double,
 	Pointer(Box<Type>),
 	Array(Box<Type>, i64),
+	Struct(String),
 	Unknown,
 }
 
@@ -207,18 +212,20 @@ enum Expr {
 	Call(String, Vec<Expr>),
 	Dereference(String),
 	AddressOf(String),
+	Struct(String, String),
 	None,
 	Unknown,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Statement {
 	Declaration(Type, String, Expr),
 	Return(Expr),
 	Call(String, Vec<Expr>),
-	Reassign(String, Expr),
+	Reassign(Expr, Expr),
 	If(Expr, Vec<Statement>, i64),
 	While(Expr, Vec<Statement>, i64),
+	Struct(String, Vec<Statement>),
 	Unknown,
 }
 
@@ -240,9 +247,12 @@ struct Program{
 	functions: Vec<Function>,
 }
 
+#[derive(Debug)]
 struct VarInfo{
 	offset: i64,
 	var_type: Type,
+	//optionnal for structs only, decratarion statement + offset
+	struct_fields: Vec<(Statement, i64)>,
 }
 
 struct VarTable{
@@ -330,6 +340,11 @@ fn parse_primary(token: &Vec<TOKEN>)->Expr{
 			if get_token(token).token_type == "LPAREN"{
 				let call = parse_call(&primary, token);
 				return Expr::Call(call.0, call.1);
+			}
+			else if get_token(token).token_type == "DECIMAL"{
+				next_token();
+				let field_name = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string()}).name;
+				return Expr::Struct(primary.name.clone(), field_name);
 			}
 			else{
 				return Expr::Variable(primary.name.clone());
@@ -449,6 +464,7 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 		if get_token(&token).token_type == "ASSIGN"{
 			next_token();
 			expr = parse_expression(token, 0);
+			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string()});
 		}
 		else if get_token(&token).token_type == "LBRACK"{
 			next_token();
@@ -457,11 +473,14 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 			// expr = parse_expression(token, 0);
 			expect(token, &TOKEN{name: "]".to_string(), token_type: "RBRACK".to_string()});
 			var_type = Type::Array(Box::new(var_type), size);
+			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string()});
+		}
+		else if get_token(&token).token_type == "SEMICOLON"{
+			next_token();
 		}
 		else{
 			expr = Expr::Unknown;
 		}
-		expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string()});
 		let a = Statement::Declaration(var_type, var_name.name, expr);
 		println!("{:?}", a);
 		return a;
@@ -479,13 +498,23 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string()});
 			return Statement::Call(call.0, call.1);
 		}
-		if get_token(token).token_type == "ASSIGN"{
+		else if get_token(token).token_type == "ASSIGN"{
 			next_token();
 			let expr = parse_expression(token, 0);
 			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string()});
-			return Statement::Reassign(current_token.name.clone(), expr)
+			return Statement::Reassign(Expr::Variable(current_token.name.clone()), expr)
 		}
-		error(&format!("Expected LPAREN, got {} : {}", get_token(token).token_type, get_token(token).name));
+		else if get_token(token).token_type == "DECIMAL"{
+			// println!("struct reassing");
+			let struct_instance_name = current_token.name.clone();
+			next_token();
+			let field_name = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string()});
+			expect(token, &TOKEN{name: "=".to_string(), token_type: "ASSIGN".to_string()});
+			let expression = parse_expression(token, 0);
+			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string()});
+			return Statement::Reassign(Expr::Struct(struct_instance_name, field_name.name), expression);
+		}
+		error(&format!("Statement invalid, after name expected LPAREN or ASSIGN, got {} : {}", get_token(token).token_type, get_token(token).name));
 		return Statement::Unknown;
 	}
 	else if current_token.token_type == "IF" || current_token.token_type == "WHILE"{
@@ -505,6 +534,44 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 			"WHILE"=>{return Statement::While(expression, body, idx);}
 			_ => {error("I really should move away from string token type and implement an enum");Statement::Unknown}
 		}
+	}
+	else if current_token.token_type == "STRUCT"{
+		let name = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string()}).name;
+		println!("struct name : {}", name);
+		if get_token(&token).token_type == "LBRACE"{
+			next_token();
+			// expect(token, &TOKEN{name: "{".to_string(), token_type: "LBRACE".to_string()});
+			let mut declarations = Vec::new();
+			while get_token(token).token_type != "RBRACE"{
+				let statement = parse_statement(token);
+				match statement{
+					Statement::Declaration(_,_,ref expr)=>{
+						match expr{
+							Expr::None=>{
+								declarations.push(statement);
+							}
+							_=>{
+								error("Expected declaration without value");
+							}
+						}
+					}
+					_ => {
+						error(&format!("Expected a variable declaration, got {:?}", statement));
+					}
+				}
+			}
+			expect(token, &TOKEN{name: "}".to_string(), token_type: "RBRACE".to_string()});
+			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string()});
+			return Statement::Struct(name, declarations);
+		}
+		else if get_token(&token).token_type == "NAME"{
+			let var_name = get_token(&token);
+			next_token();
+			// for now only empry declaration
+			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string()});
+			return Statement::Declaration(Type::Struct(name), var_name.name.clone(), Expr::None);
+		}
+		else{error(&format!("invalid structure declaration, found token : {:?}", get_token(&token).token_type));Statement::Unknown}
 	}
 	else{
 		error(&format!("Invalid token found in statement : {} : {}", current_token.token_type, current_token.name));
@@ -573,7 +640,7 @@ fn gen_call(name: &String, args: &Vec<Expr>, variable_table: &mut VarTable, asm_
 	    					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov {}, eax\n", regs32[i]));
     					}
     				}
-    				println!("!!!!!!!!!variable type : {:?}", var_type);
+    				// println!("!!!!!!!!!variable type : {:?}", var_type);
     			}
     			_ => {
 	    			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov {}, eax\n", regs32[i]));
@@ -682,6 +749,31 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
         Expr::AddressOf(name) => {
         	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    lea rax, [rbp-8]\n"));
         }
+        Expr::Struct(instance_name, field_name)=>{
+        	println!("instance_name : {}, field_name : {}", instance_name, field_name);
+    		println!("Symbol table : {:?}", variable_table.symbole_table);
+    		let struct_type_name = &variable_table.symbole_table.get(instance_name).unwrap().var_type;
+    		let mut struct_name = "";
+    		match struct_type_name{
+    			Type::Struct(name)=>{
+					struct_name = name;
+    			}
+    			_=>{error("THIS SHOULD NEVER HAPPEN");}
+    		}
+    		let struct_info = variable_table.symbole_table.get(struct_name).unwrap();
+    		for field in &struct_info.struct_fields{
+    			match &field.0{
+    				Statement::Declaration(_,name,_)=>{
+    					if *name == *field_name{
+							asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov eax, [rbp {}]\n", field.1));
+    					}
+    				}
+    				_=>{
+    					error(&format!("Expected declarations in structure, got : {:?} instead",field));
+    				}
+    			}
+    		}
+        }
         Expr::Unknown => {
         	error("Unknown expression");
         }
@@ -690,6 +782,26 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
         	error(&format!("Expr \"{:?}\" Not yet implemented", expr));
         }
     }
+}
+
+fn store_type(var_type: &Type, offset: i64, asm_struct: &mut AssemblyStructure){
+	match var_type{
+		Type::Bool | Type::Char => {
+			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov BYTE PTR [rbp {}], al\n", offset));
+		}
+		Type::Pointer(_) => {
+			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov QWORD PTR [rbp {}], rax\n", offset));
+		}
+		Type::Array(_,_) => {
+			println!("array declaraion, do nothing");
+		}
+		// Type::Struct(name) =>{
+		// 	// println!("AAAAAAAAAAA");
+		// }
+		_ =>{
+			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov [rbp {}], eax\n", offset));
+		}
+	}
 }
 
 fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struct: &mut AssemblyStructure) {
@@ -703,29 +815,53 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
         Statement::Declaration(var_type, name, expr) => {
             gen_expr(expr, variable_table, asm_struct);
             variable_table.stack_offset -= get_offset(var_type);
-            variable_table.symbole_table.insert(name.clone(), VarInfo{var_type: var_type.clone(), offset: variable_table.stack_offset});
-            match var_type{
-            	Type::Bool | Type::Char => {
-					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov BYTE PTR [rbp {}], al\n", variable_table.stack_offset));
-            	}
-            	Type::Pointer(_) => {
-					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov QWORD PTR [rbp {}], rax\n", variable_table.stack_offset));
-            	}
-            	Type::Array(_,_) => {
-            		println!("array declaraion, do nothing");
-            	}
-            	_ =>{
-					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov [rbp {}], eax\n", variable_table.stack_offset));
-            	}
+            variable_table.symbole_table.insert(name.clone(), VarInfo{var_type: var_type.clone(), offset: variable_table.stack_offset, struct_fields: Vec::new()});
+            if *expr != Expr::None{
+            	store_type(var_type, variable_table.stack_offset, asm_struct);
             }
         }
         Statement::Call(name, args)=>{
         	gen_call(name, args, variable_table, asm_struct);
         }
-        Statement::Reassign(name, expr)=>{
-            gen_expr(expr, variable_table, asm_struct);
-            let var_offset = variable_table.symbole_table.get(name).unwrap().offset;
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov [rbp {}], eax\n", var_offset));
+        Statement::Reassign(variable, expr)=>{
+        	match variable{
+        		Expr::Variable(name)=>{
+			        gen_expr(expr, variable_table, asm_struct);
+		            let var_offset = variable_table.symbole_table.get(name).unwrap().offset;
+					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov [rbp {}], eax\n", var_offset));
+        		},
+        		Expr::Struct(instance_name, field_name)=>{
+        			println!("instance_name : {}, field_name : {}", instance_name, field_name);
+            		println!("Symbol table : {:?}", variable_table.symbole_table);
+			        gen_expr(expr, variable_table, asm_struct);
+            		let struct_type_name = &variable_table.symbole_table.get(instance_name).unwrap().var_type;
+            		let mut struct_name = "";
+            		match struct_type_name{
+            			Type::Struct(name)=>{
+							struct_name = name;
+            			}
+            			_=>{error("THIS SHOULD NEVER HAPPEN");}
+            		}
+            		let struct_fields = variable_table.symbole_table.get(struct_name).unwrap().struct_fields.clone();
+            		for field in &struct_fields{
+            			match &field.0{
+            				Statement::Declaration(var_type,name,_)=>{
+            					if *name == *field_name{
+            						store_type(var_type, field.1, asm_struct);
+            					}
+            				}
+            				_=>{
+            					error(&format!("Expected declarations in structure, got : {:?} instead",field));
+            				}
+            			}
+            		}
+
+        			// error("reassigning structs not yet implemented");
+        		}
+        		_=>{
+        			error(&format!("Can't reassign a {:?}", variable));
+        		}
+        	}
         }
         Statement::If(condition, statement_body, index) => {
         	match condition{
@@ -764,8 +900,24 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
             gen_expr(condition, variable_table, asm_struct);
 			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    jne .L{}\n", second_index));
         }
+        Statement::Struct(name, fields)=>{
+        	let mut fields_offet = Vec::new();
+        	for field in fields{
+        		match field{
+        			Statement::Declaration(var_type, name, expr)=>{
+			        	variable_table.stack_offset -= get_offset(&var_type);
+			        	fields_offet.push((field.clone(), variable_table.stack_offset));
+        			}
+        			_=>{
+        				error("Expected field declaration in struct");
+        			}
+        		}
+        	}
+        	// println!("struct declaration, do nothing for now");
+			variable_table.symbole_table.insert(name.clone(), VarInfo{var_type: Type::Struct(name.clone()), offset: variable_table.stack_offset, struct_fields: fields_offet.clone()});
+        }
         _ => {
-        	error("Statement Not Yet Implemented");
+        	error(&format!("{:?} Statement Not Yet Implemented", statement));
         }
     }
 }
@@ -792,7 +944,7 @@ fn gen_function(function : &Function, asm_struct: &mut AssemblyStructure){
 		let regs8 = vec!["dil", "sil", "dl", "cl", "r8b", "r9b"];
 		for i in 0..function.args.len(){
             variable_table.stack_offset -= get_offset(&function.args[i].var_type);
-		    variable_table.symbole_table.insert(function.args[i].name.clone(), VarInfo{var_type: function.args[i].var_type.clone(), offset: variable_table.stack_offset});
+		    variable_table.symbole_table.insert(function.args[i].name.clone(), VarInfo{var_type: function.args[i].var_type.clone(), offset: variable_table.stack_offset, struct_fields: Vec::new()});
 		    match function.args[i].var_type{
 		    	Type::Char => {
 					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov BYTE PTR [rbp {}], {}\n", variable_table.stack_offset, regs8[i]));
@@ -930,7 +1082,7 @@ fn main(){
 	}
 	let mut data = raw_data.chars();
 
-	let tokens = ["int", "double", "char", "float", "bool", "return", ";", "{", "}", "(", ")", "[", "]", "+", "-", "*", "/", "=", "!", ",", "\'", "\"", "&", "true", "false", ".", "#", "define", "include", "<", ">", "if", "while", "for"];
+	let tokens = ["int", "double", "char", "float", "bool", "return", ";", "{", "}", "(", ")", "[", "]", "+", "-", "*", "/", "=", "!", ",", "\'", "\"", "&", "true", "false", ".", "#", "define", "include", "<", ">", "if", "while", "for", "struct"];
 
 	let mut found_tokens:Vec<TOKEN> = Vec::new();
 
@@ -987,9 +1139,14 @@ fn main(){
 										found_tokens.push(tagged_token);
 									}
 									else{
-										let tagged_token = tagging(&trimmed_token.trim().to_string());
-										println!("found token pass 2.0\"{}\" : \"{}\"", tagged_token.token_type, tagged_token.name);
-										found_tokens.push(tagged_token);
+										let split_tokens = trimmed_token.trim().split_whitespace();
+										// println!("split tokens in pass 2.0{:?}", split_tokens);
+										for split_token in split_tokens{
+											let tagged_token = tagging(&split_token.to_string());
+											println!("found token pass 2.0\"{}\" : \"{}\"", tagged_token.token_type, tagged_token.name);
+											found_tokens.push(tagged_token);
+										}
+										// let split_tokens = tagged_token;
 									}
 								}
 								token.clear();
