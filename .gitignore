@@ -2,3 +2,5 @@ main
 main.c
 out.s
 out_cmp
+gf2
+Test/test

@@ -1,11 +1,11 @@
 clear
 rustc main.rs
 if [[ $? == 0 ]]; then
-	./main main.c out.s
+	./main Tests/test.c Tests/out.s
 	if [[ $? == 0 ]]; then
-		gcc out.s -o out_cmp
+		gcc ./Tests/out.s -o ./Tests/test
 		echo "Output of program execution:"
-		./out_cmp
+		./Tests/test
 		res=$?
 		echo "Result of program execution:"
 		echo $res

@@ -1,6 +1,7 @@
 use std::fs;
 use std::process::exit;
 use std::collections::HashMap;
+use std::env;
 
 fn is_type(token: &String) -> bool {
 	if token == "int" || token == "char" || token == "float" || token == "double" || token == "bool"{
@@ -19,102 +20,107 @@ fn is_numerical(token: &String)->bool{
 struct TOKEN{
 	name: String,
 	token_type: String,
+	line: i64,
+	column :i64,
 }
 
 static mut TOKEN_INDEX: i64 = 0;
 static mut STRING_INDEX: i64 = 0;
 static mut LABEL_INDEX: i64 = 0;
 
-fn tagging(token: &String) -> TOKEN{
+fn tagging(token: &String, line: i64, column: i64) -> TOKEN{
 	if is_type(&token){
-		return TOKEN{name: token.to_string(), token_type: "TYPE".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "TYPE".to_string(), line: line, column: column};
 	}
 	else if token == "return"{
-		return TOKEN{name: token.to_string(), token_type: "RETURN".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "RETURN".to_string(), line: line, column: column};
 	}
 	else if token == "("{
-		return TOKEN{name: token.to_string(), token_type: "LPAREN".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "LPAREN".to_string(), line: line, column: column};
 	}
 	else if token == ")"{
-		return TOKEN{name: token.to_string(), token_type: "RPAREN".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "RPAREN".to_string(), line: line, column: column};
 	}
 	else if token == "{"{
-		return TOKEN{name: token.to_string(), token_type: "LBRACE".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "LBRACE".to_string(), line: line, column: column};
 	}
 	else if token == "}"{
-		return TOKEN{name: token.to_string(), token_type: "RBRACE".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "RBRACE".to_string(), line: line, column: column};
 	}
 	else if token == "["{
-		return TOKEN{name: token.to_string(), token_type: "LBRACK".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "LBRACK".to_string(), line: line, column: column};
 	}
 	else if token == "]"{
-		return TOKEN{name: token.to_string(), token_type: "RBRACK".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "RBRACK".to_string(), line: line, column: column};
 	}
 	else if token == "+"{
-		return TOKEN{name: token.to_string(), token_type: "PLUS".to_string()};
-	}else if token == "-"{
-		return TOKEN{name: token.to_string(), token_type: "MINUS".to_string()};
-	}else if token == "*"{
-		return TOKEN{name: token.to_string(), token_type: "STAR".to_string()};
-	}else if token == "/"{
-		return TOKEN{name: token.to_string(), token_type: "SLASH".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "PLUS".to_string(), line: line, column: column};
+	}
+	else if token == "-"{
+		return TOKEN{name: token.to_string(), token_type: "MINUS".to_string(), line: line, column: column};
+	}
+	else if token == "*"{
+		return TOKEN{name: token.to_string(), token_type: "STAR".to_string(), line: line, column: column};
+	}
+	else if token == "/"{
+		return TOKEN{name: token.to_string(), token_type: "SLASH".to_string(), line: line, column: column};
 	}
 	else if token == "="{
-		return TOKEN{name: token.to_string(), token_type: "ASSIGN".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "ASSIGN".to_string(), line: line, column: column};
 	}
 	else if token == "!"{
-		return TOKEN{name: token.to_string(), token_type: "NOT".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "NOT".to_string(), line: line, column: column};
 	}
 	else if is_numerical(&token){
-		return TOKEN{name: token.to_string(), token_type: "NUMBER".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "NUMBER".to_string(), line: line, column: column};
 	}
 	else if token == ";"{
-		return TOKEN{name: token.to_string(), token_type: "SEMICOLON".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "SEMICOLON".to_string(), line: line, column: column};
 	}
 	else if token == ","{
-		return TOKEN{name: token.to_string(), token_type: "COMMA".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "COMMA".to_string(), line: line, column: column};
 	}
 	else if token == "\'"{
-		return TOKEN{name: token.to_string(), token_type: "SINGLEQUOTE".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "SINGLEQUOTE".to_string(), line: line, column: column};
 	}
 	else if token == "\""{
-		return TOKEN{name: token.to_string(), token_type: "DOUBLEQUOTE".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "DOUBLEQUOTE".to_string(), line: line, column: column};
 	}
 	else if token == "&"{
-		return TOKEN{name: token.to_string(), token_type: "ADDRESSOF".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "ADDRESSOF".to_string(), line: line, column: column};
 	}
 	else if token == "true" || token == "false" {
-		return TOKEN{name: token.to_string(), token_type: "BOOLEAN".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "BOOLEAN".to_string(), line: line, column: column};
 	}
 	else if token == "."{
-		return TOKEN{name: token.to_string(), token_type: "DECIMAL".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "DECIMAL".to_string(), line: line, column: column};
 	}
 	else if token == "#"{
-		return TOKEN{name: token.to_string(), token_type: "PREPROCESSORDECL".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "PREPROCESSORDECL".to_string(), line: line, column: column};
 	}
 	else if token == "define" || token == "include"{
-		return TOKEN{name: token.to_string(), token_type: "PREPROCESSOR".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "PREPROCESSOR".to_string(), line: line, column: column};
 	}
 	else if token == "<"{
-		return TOKEN{name: token.to_string(), token_type: "LCHEV".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "LCHEV".to_string(), line: line, column: column};
 	}
 	else if token == ">"{
-		return TOKEN{name: token.to_string(), token_type: "RCHEV".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "RCHEV".to_string(), line: line, column: column};
 	}
 	else if token == "if"{
-		return TOKEN{name: token.to_string(), token_type: "IF".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "IF".to_string(), line: line, column: column};
 	}
 	else if token == "while"{
-		return TOKEN{name: token.to_string(), token_type: "WHILE".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "WHILE".to_string(), line: line, column: column};
 	}
 	else if token == "for"{
-		return TOKEN{name: token.to_string(), token_type: "FOR".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "FOR".to_string(), line: line, column: column};
 	}
 	else if token == "struct"{
-		return TOKEN{name: token.to_string(), token_type: "STRUCT".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "STRUCT".to_string(), line: line, column: column};
 	}
 	else {
-		return TOKEN{name: token.to_string(), token_type: "NAME".to_string()};
+		return TOKEN{name: token.to_string(), token_type: "NAME".to_string(), line: line, column: column};
 	}
 }
 
@@ -154,7 +160,13 @@ fn get_offset(var_type: &Type) -> i64{
 	}
 }
 
-fn error(cause: &str){
+fn parsing_error(cause: &str, tokens: &Vec<TOKEN>){
+	let token = get_token(tokens);
+	println!("Error : (l.{}:{}) {cause} !", token.line, token.column);
+	exit(1);
+}
+
+fn compiler_panic(cause :&str){
 	println!("Error : {cause} !");
 	exit(1);
 }
@@ -166,9 +178,9 @@ fn expect(tokens: &Vec<TOKEN>, expected: &TOKEN) -> TOKEN {
 		return current_token.clone();
 	}
 	else{
-		error(&format!("Expected {0} : \"{1}\", got {2} : \"{3}\"", expected.token_type, expected.name, current_token.token_type, current_token.name));
+		parsing_error(&format!("Expected {0} : \"{1}\", got {2} : \"{3}\"", expected.token_type, expected.name, current_token.token_type, current_token.name), tokens);
 	}
-	return TOKEN{name: "THIS SHOULD NEVER HAPPEN".to_string(), token_type: "THIS SHOULD NEVER HAPPEN".to_string()};
+	return TOKEN{name: "THIS SHOULD NEVER HAPPEN".to_string(), token_type: "THIS SHOULD NEVER HAPPEN".to_string(), line: 0, column: 0};
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -283,23 +295,25 @@ fn parse_type(token: &TOKEN) -> Type{
 
 }
 
-fn parse_call(fn_name: &TOKEN, token: &Vec<TOKEN>) -> (String, Vec<Expr>){
+fn parse_call(fn_name: &TOKEN, tokens: &Vec<TOKEN>) -> (String, Vec<Expr>){
 	next_token();
 	let mut arguments = Vec::new();
-	loop {
-		arguments.push(parse_expression(token, 0));
-		if get_token(token).token_type == "COMMA"{
-			next_token();
-		}
-		else if get_token(token).token_type == "RPAREN"{
-			break;
-		}
-		else{
-			println!("Parsing call to {} with arguments {:?}", fn_name.name, arguments);
-			error(&format!("Expected COMMA : \",\" or RPAREN : \")\", got {}", get_token(token).token_type));
+	if get_token(tokens).token_type != "RPAREN"{
+		loop {
+			arguments.push(parse_expression(tokens, 0));
+			if get_token(tokens).token_type == "COMMA"{
+				next_token();
+			}
+			else if get_token(tokens).token_type == "RPAREN"{
+				break;
+			}
+			else{
+				// println!("Parsing call to {} with arguments {:?}", );
+				parsing_error(&format!("While parsing call to {} with arguments {:?}, expected COMMA : \",\" or RPAREN : \")\", got {} : \"{}\"", fn_name.name, arguments, get_token(tokens).token_type, get_token(tokens).name), tokens);
+			}
 		}
 	}
-	expect(token, &TOKEN{name: ")".to_string(), token_type: "RPAREN".to_string()});
+	expect(tokens, &TOKEN{name: ")".to_string(), token_type: "RPAREN".to_string(), line: 0, column: 0});
 	return (fn_name.name.clone(), arguments);
 }
 
@@ -323,7 +337,7 @@ fn parse_bool(string: &str) -> bool{
 		"true"=>true,
 		"false"=>false,
 		_=>{
-			error("Not a boolean");
+			compiler_panic(&format!("{string} is not a boolean"));
 			false
 		}
 	}
@@ -343,7 +357,7 @@ fn parse_primary(token: &Vec<TOKEN>)->Expr{
 			}
 			else if get_token(token).token_type == "DECIMAL"{
 				next_token();
-				let field_name = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string()}).name;
+				let field_name = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string(), line: 0, column: 0}).name;
 				return Expr::Struct(primary.name.clone(), field_name);
 			}
 			else{
@@ -360,32 +374,32 @@ fn parse_primary(token: &Vec<TOKEN>)->Expr{
 			}
 			let char_literal = Expr::CharLiteral(character);
 			next_token();
-			expect(token, &TOKEN{name: "\'".to_string(), token_type: "SINGLEQUOTE".to_string()});
+			expect(token, &TOKEN{name: "\'".to_string(), token_type: "SINGLEQUOTE".to_string(), line: 0, column: 0});
 			return char_literal;
 		}
 		"DOUBLEQUOTE"=>{
-			let string = expect(token, &TOKEN{name: "Any String".to_string(), token_type: "STRING".to_string()});
+			let string = expect(token, &TOKEN{name: "Any String".to_string(), token_type: "STRING".to_string(), line: 0, column: 0});
 			let string_litteral = Expr::StringLiteral(string.name, update_string_index());
-			expect(token, &TOKEN{name: "\"".to_string(), token_type: "DOUBLEQUOTE".to_string()});
+			expect(token, &TOKEN{name: "\"".to_string(), token_type: "DOUBLEQUOTE".to_string(), line: 0, column: 0});
 			return string_litteral;
 		}
 		"BOOLEAN" => {
 			return Expr::BoolLiteral(parse_bool(&primary.name));
 		}
 		"NOT" => {
-			error("Not operation is not yet implemented");
+			parsing_error("Not operation is not yet implemented", token);
 			return Expr::Unknown
 		}
 		"STAR" => {
-			let variable = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string()});
+			let variable = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string(), line: 0, column: 0});
 			return Expr::Dereference(variable.name);
 		}
 		"ADDRESSOF" => {
-			let variable = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string()});
+			let variable = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string(), line: 0, column: 0});
 			return Expr::AddressOf(variable.name);
 		}
 		_ => {
-			error(&format!("Expression incorrect, got {0}.... fuck you", primary.token_type));
+			parsing_error(&format!("{} is not a valid primary expression", primary.token_type), token);
 			return Expr::Unknown;
 		}
 	}
@@ -411,7 +425,7 @@ fn parse_expression(token: &Vec<TOKEN>, min_precedence: u8) -> Expr{
 					next_token();
 					BinaryOp::EQUAL
 				}
-				else{error("Expected comparison, got assign"); BinaryOp::UNKNOWN}
+				else{parsing_error("Expected comparison, got assign", token); BinaryOp::UNKNOWN}
 			},
 			"NOT" => {
 				if get_token(token).token_type == "ASSIGN"{
@@ -419,9 +433,9 @@ fn parse_expression(token: &Vec<TOKEN>, min_precedence: u8) -> Expr{
 					BinaryOp::NEQUAL
 				}
 				else if get_token(token).token_type == "NAME"{
-					error("Not-ing variable not yet implemented");BinaryOp::UNKNOWN
+					parsing_error("Not-ing variable not yet implemented", token);BinaryOp::UNKNOWN
 				}
-				else{error("Expected comparison, got assign"); BinaryOp::UNKNOWN}
+				else{parsing_error("Expected comparison, got assign", token); BinaryOp::UNKNOWN}
 			},
 			"LCHEV"=>{
 				if get_token(token).token_type == "ASSIGN"{
@@ -459,21 +473,21 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 			var_type = Type::Pointer(Box::new(var_type));
 			next_token();
 		}
-		let var_name = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string()});
+		let var_name = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string(), line: 0, column: 0});
 		let mut expr = Expr::None;
 		if get_token(&token).token_type == "ASSIGN"{
 			next_token();
 			expr = parse_expression(token, 0);
-			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string()});
+			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
 		}
 		else if get_token(&token).token_type == "LBRACK"{
 			next_token();
 			let size = get_token(&token).name.parse::<i64>().unwrap();
 			next_token();
 			// expr = parse_expression(token, 0);
-			expect(token, &TOKEN{name: "]".to_string(), token_type: "RBRACK".to_string()});
+			expect(token, &TOKEN{name: "]".to_string(), token_type: "RBRACK".to_string(), line: 0, column: 0});
 			var_type = Type::Array(Box::new(var_type), size);
-			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string()});
+			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
 		}
 		else if get_token(&token).token_type == "SEMICOLON"{
 			next_token();
@@ -489,54 +503,54 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 	else if current_token.token_type == "RETURN"{
 		let expression = parse_expression(token, 0);
 		println!("Expression : \n{:?}", expression);
-		expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string()});
+		expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
 		return Statement::Return(expression);
 	}
 	else if current_token.token_type == "NAME"{
 		if get_token(token).token_type == "LPAREN"{
 			let call = parse_call(current_token, token);
-			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string()});
+			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
 			return Statement::Call(call.0, call.1);
 		}
 		else if get_token(token).token_type == "ASSIGN"{
 			next_token();
 			let expr = parse_expression(token, 0);
-			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string()});
+			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
 			return Statement::Reassign(Expr::Variable(current_token.name.clone()), expr)
 		}
 		else if get_token(token).token_type == "DECIMAL"{
 			// println!("struct reassing");
 			let struct_instance_name = current_token.name.clone();
 			next_token();
-			let field_name = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string()});
-			expect(token, &TOKEN{name: "=".to_string(), token_type: "ASSIGN".to_string()});
+			let field_name = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string(), line: 0, column: 0});
+			expect(token, &TOKEN{name: "=".to_string(), token_type: "ASSIGN".to_string(), line: 0, column: 0});
 			let expression = parse_expression(token, 0);
-			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string()});
+			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
 			return Statement::Reassign(Expr::Struct(struct_instance_name, field_name.name), expression);
 		}
-		error(&format!("Statement invalid, after name expected LPAREN or ASSIGN, got {} : {}", get_token(token).token_type, get_token(token).name));
+		parsing_error(&format!("Statement invalid, after name expected LPAREN or ASSIGN, got {} : {}", get_token(token).token_type, get_token(token).name), token);
 		return Statement::Unknown;
 	}
 	else if current_token.token_type == "IF" || current_token.token_type == "WHILE"{
-		expect(token, &TOKEN{name: "(".to_string(), token_type: "LPAREN".to_string()});
+		expect(token, &TOKEN{name: "(".to_string(), token_type: "LPAREN".to_string(), line: 0, column: 0});
 		let expression = parse_expression(token, 0);
-		expect(token, &TOKEN{name: ")".to_string(), token_type: "RPAREN".to_string()});
-		expect(token, &TOKEN{name: "{".to_string(), token_type: "LBRACE".to_string()});
+		expect(token, &TOKEN{name: ")".to_string(), token_type: "RPAREN".to_string(), line: 0, column: 0});
+		expect(token, &TOKEN{name: "{".to_string(), token_type: "LBRACE".to_string(), line: 0, column: 0});
 		let mut body = Vec::new();
 		while get_token(token).token_type != "RBRACE"{
 			body.push(parse_statement(token));
 		}
 		println!("body : {:?}", body);
-		expect(token, &TOKEN{name: "}".to_string(), token_type: "RBRACE".to_string()});
+		expect(token, &TOKEN{name: "}".to_string(), token_type: "RBRACE".to_string(), line: 0, column: 0});
 		let idx = update_label_index();
 		match current_token.token_type.as_str(){
 			"IF"=>{return Statement::If(expression, body, idx);}
 			"WHILE"=>{return Statement::While(expression, body, idx);}
-			_ => {error("I really should move away from string token type and implement an enum");Statement::Unknown}
+			_ => {parsing_error("I really should move away from string token type and implement an enum", token);Statement::Unknown}
 		}
 	}
 	else if current_token.token_type == "STRUCT"{
-		let name = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string()}).name;
+		let name = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string(), line: 0, column: 0}).name;
 		println!("struct name : {}", name);
 		if get_token(&token).token_type == "LBRACE"{
 			next_token();
@@ -551,38 +565,38 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 								declarations.push(statement);
 							}
 							_=>{
-								error("Expected declaration without value");
+								parsing_error("Expected declaration without value", token);
 							}
 						}
 					}
 					_ => {
-						error(&format!("Expected a variable declaration, got {:?}", statement));
+						parsing_error(&format!("Expected a variable declaration, got {:?}", statement), token);
 					}
 				}
 			}
-			expect(token, &TOKEN{name: "}".to_string(), token_type: "RBRACE".to_string()});
-			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string()});
+			expect(token, &TOKEN{name: "}".to_string(), token_type: "RBRACE".to_string(), line: 0, column: 0});
+			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
 			return Statement::Struct(name, declarations);
 		}
 		else if get_token(&token).token_type == "NAME"{
 			let var_name = get_token(&token);
 			next_token();
 			// for now only empry declaration
-			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string()});
+			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
 			return Statement::Declaration(Type::Struct(name), var_name.name.clone(), Expr::None);
 		}
-		else{error(&format!("invalid structure declaration, found token : {:?}", get_token(&token).token_type));Statement::Unknown}
+		else{parsing_error(&format!("invalid structure declaration, found token : {:?}", get_token(&token).token_type), token);Statement::Unknown}
 	}
 	else{
-		error(&format!("Invalid token found in statement : {} : {}", current_token.token_type, current_token.name));
+		parsing_error(&format!("Invalid token found in statement : {} : {}", current_token.token_type, current_token.name), token);
 		return Statement::Unknown;
 	}	
 }
 
 fn parse_function(token : &Vec<TOKEN>) -> Function{
-	expect(token, &TOKEN{name: "Any Type".to_string(), token_type: "TYPE".to_string()});
-	let fn_name = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string()});
-	expect(token, &TOKEN{name: "(".to_string(), token_type: "LPAREN".to_string()});
+	expect(token, &TOKEN{name: "Any Type".to_string(), token_type: "TYPE".to_string(), line: 0, column: 0});
+	let fn_name = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string(), line: 0, column: 0});
+	expect(token, &TOKEN{name: "(".to_string(), token_type: "LPAREN".to_string(), line: 0, column: 0});
 	let mut arguments = Vec::new();
 	if get_token(&token).token_type != "RPAREN"{
 		loop{
@@ -593,7 +607,7 @@ fn parse_function(token : &Vec<TOKEN>) -> Function{
 					var_type = Type::Pointer(Box::new(var_type));
 					next_token();
 				}
-				let argument = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string()});
+				let argument = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string(), line: 0, column: 0});
 				arguments.push(FunctionArgDeclaration{var_type: var_type, name: argument.name});
 				if get_token(&token).token_type == "COMMA"{
 					next_token();
@@ -602,21 +616,21 @@ fn parse_function(token : &Vec<TOKEN>) -> Function{
 					break;
 				}
 				else{
-					error(&format!("Expected RPAREN : \")\" or COMMA : \",\", got {}", get_token(&token).token_type));
+					parsing_error(&format!("Expected RPAREN : \")\" or COMMA : \",\", got {}", get_token(&token).token_type), token);
 				} 
 			}
 			else{
-				error(&format!("Expected TYPE, got {}", get_token(&token).token_type));
+				parsing_error(&format!("Expected TYPE, got {}", get_token(&token).token_type), token);
 			}
 		}
 	}
-	expect(token, &TOKEN{name: ")".to_string(), token_type: "RPAREN".to_string()});
-	expect(token, &TOKEN{name: "{".to_string(), token_type: "LBRACE".to_string()});
+	expect(token, &TOKEN{name: ")".to_string(), token_type: "RPAREN".to_string(), line: 0, column: 0});
+	expect(token, &TOKEN{name: "{".to_string(), token_type: "LBRACE".to_string(), line: 0, column: 0});
 	let mut body = Vec::new();
 	while get_token(token).token_type != "RBRACE"{
 		body.push(parse_statement(token));
 	}
-	expect(token, &TOKEN{name: "}".to_string(), token_type: "RBRACE".to_string()});
+	expect(token, &TOKEN{name: "}".to_string(), token_type: "RBRACE".to_string(), line: 0, column: 0});
 	return Function{name: fn_name.name, args: arguments, body: body};
 }
 
@@ -624,13 +638,33 @@ fn gen_call(name: &String, args: &Vec<Expr>, variable_table: &mut VarTable, asm_
 	if args.len() > 0{
 		let regs64 = vec!["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
 		let regs32 = vec!["edi", "esi", "edx", "ecx", "r8d", "r9d"];
+		let mut fn_calls:Vec<(Expr, usize)> = Vec::new();
 		for i in 0..args.len(){
-    		gen_expr(&args[i], variable_table, asm_struct);
+			match args[i]{
+				Expr::Call(_, _)=>{
+					fn_calls.push((args[i].clone(), i));
+				}
+				_=>{/*do not treat the rest*/}
+			}
+		}
+		for (call, i) in fn_calls {
+			match call{
+				Expr::Call(name, args)=>{
+					gen_call(&name, &args, variable_table, asm_struct);
+    				asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov {}, eax\n", regs32[i]));
+				}
+				_=>{/*do not treat*/}
+			}
+		}
+
+		for i in 0..args.len(){
     		match &args[i]{
     			Expr::AddressOf(_) => {
+    				gen_expr(&args[i], variable_table, asm_struct);
     				asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov {}, rax\n", regs64[i]));
     			}
     			Expr::Variable(name)=>{
+    				gen_expr(&args[i], variable_table, asm_struct);
     				let var_type = variable_table.symbole_table.get(name).unwrap().var_type.clone();
     				match var_type{
     					Type::Array(_, _) => {
@@ -642,7 +676,9 @@ fn gen_call(name: &String, args: &Vec<Expr>, variable_table: &mut VarTable, asm_
     				}
     				// println!("!!!!!!!!!variable type : {:?}", var_type);
     			}
+    			Expr::Call(_,_)=>{/*do not treat*/}
     			_ => {
+    				gen_expr(&args[i], variable_table, asm_struct);
 	    			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov {}, eax\n", regs32[i]));
     			}
     		}
@@ -651,10 +687,50 @@ fn gen_call(name: &String, args: &Vec<Expr>, variable_table: &mut VarTable, asm_
 	// since printf is a function that takes variadic arguments, eax needs to hold the number of floating point numbers in the arguments
 	// i did not yet implement type checking to detect variadics so we manually check if the function is printf and allways null out eax
 	// since we also don't support floats yet
-	if name == "printf"{
+	if name == "printf" || name == "sprintf"{
 		asm_struct.text[asm_struct.function_index].body.push_str("    xor eax, eax\n");
 	}
 	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    call {}\n", name));
+}
+
+fn store_type(var_type: &Type, offset: i64, asm_struct: &mut AssemblyStructure){
+	match var_type{
+		Type::Bool | Type::Char => {
+			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov BYTE PTR [rbp {}], al\n", offset));
+		}
+		Type::Pointer(_) => {
+			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov QWORD PTR [rbp {}], rax\n", offset));
+		}
+		Type::Array(_,_) => {
+			println!("array declaraion, do nothing");
+		}
+		// Type::Struct(name) =>{
+		// 	// println!("AAAAAAAAAAA");
+		// }
+		_ =>{
+			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov [rbp {}], eax\n", offset));
+		}
+	}
+}
+
+fn get_type(var_type: &Type, offset: i64, asm_struct: &mut AssemblyStructure){
+	match var_type{
+		Type::Int => {
+			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov eax, [rbp {}]\n", offset));
+		}
+		Type::Char | Type::Bool => {
+			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    movzx eax, BYTE PTR [rbp {}]\n", offset));
+		}
+		Type::Pointer(_) => {
+			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov rax, QWORD PTR [rbp {}]\n", offset));
+		}
+		Type::Array(_, _) => {
+			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    lea rax, [rbp {}]\n", offset));
+		}
+		_ =>{
+			compiler_panic(&format!("Variable Type {:?} Not Yet Implemented", var_type));
+		}
+	}
 }
 
 fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut AssemblyStructure) {
@@ -694,42 +770,26 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
             			BinaryOp::GREATEREQ=>{asm_struct.text[asm_struct.function_index].body.push_str(&format!("    setge al\n"));}
             			BinaryOp::LESSER=>{asm_struct.text[asm_struct.function_index].body.push_str(&format!("    setl al\n"));}
             			BinaryOp::LESSEREQ=>{asm_struct.text[asm_struct.function_index].body.push_str(&format!("    setle al\n"));}
-            			_ =>{error("THIS SHOULD NEVER HAPPEN");}
+            			_ =>{compiler_panic("THIS SHOULD NEVER HAPPEN");}
             		}
             		// asm_struct.text[asm_struct.function_index].body.push_str(&format!("    sete al\n"));
             		asm_struct.text[asm_struct.function_index].body.push_str(&format!("    movzx eax, al\n"));
             		asm_struct.text[asm_struct.function_index].body.push_str(&format!("    cmp eax, 0\n"));
         		}
         		BinaryOp::UNKNOWN =>{
-        			error("Somehow stumbeled uppon unknown operation, this should never happen");
+        			compiler_panic("Somehow stumbeled uppon unknown operation, this should never happen");
         		}
         		_ => {
-        			error("Binary Operator Not Yet Implemented");
+        			compiler_panic("Binary Operator Not Yet Implemented");
         		}
         	}
         } ,
         Expr::Variable(name) => {
         	if let Some(var_info) = variable_table.symbole_table.get(name){
-        		match var_info.var_type{
-        			Type::Int => {
-        				asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov eax, [rbp {}]\n", var_info.offset));
-        			}
-        			Type::Char | Type::Bool => {
-        				asm_struct.text[asm_struct.function_index].body.push_str(&format!("    movzx eax, BYTE PTR [rbp {}]\n", var_info.offset));
-        			}
-        			Type::Pointer(_) => {
-        				asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov rax, QWORD PTR [rbp {}]\n", var_info.offset));
-        			}
-        			Type::Array(_, _) => {
-        				asm_struct.text[asm_struct.function_index].body.push_str(&format!("    lea rax, [rbp {}]\n", var_info.offset));
-        			}
-        			_ =>{
-        				error(&format!("Variable Type {:?} Not Yet Implemented", var_info.var_type));
-        			}
-        		}
+        		get_type(&var_info.var_type, var_info.offset, asm_struct);
         	}
         	else{
-        		error(&format!("Variable \"{}\" used before declaration", name));
+        		compiler_panic(&format!("Variable \"{}\" used before declaration", name));
         	}
         },
         Expr::Call(name, args) => {
@@ -742,8 +802,19 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
         },
         Expr::Dereference(name)=>{
         	let variable = variable_table.symbole_table.get(name);
-        	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov rax, QWORD PTR [rbp {}]\n", variable.unwrap().offset));
-        	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    movzx eax, BYTE PTR [rax]\n"));
+        	// println!("dereferincig type : {:?}", variable.unwrap().var_type);
+        	match variable.unwrap().var_type{
+        		Type::Pointer(_)=>{
+		        	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov rax, QWORD PTR [rbp {}]\n", variable.unwrap().offset));
+		        	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    movzx eax, BYTE PTR [rax]\n"));
+        		}
+        		Type::Array(_,_)=>{
+		        	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    movzx eax, BYTE PTR [rbp {}]\n", variable.unwrap().offset));
+        		}
+        		_=>{
+        			compiler_panic("Cannot dereference this type");
+        		}
+        	}
         	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    movsx eax, al\n"));
         }
         Expr::AddressOf(name) => {
@@ -758,50 +829,31 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
     			Type::Struct(name)=>{
 					struct_name = name;
     			}
-    			_=>{error("THIS SHOULD NEVER HAPPEN");}
+    			_=>{compiler_panic("THIS SHOULD NEVER HAPPEN");}
     		}
     		let struct_info = variable_table.symbole_table.get(struct_name).unwrap();
     		for field in &struct_info.struct_fields{
     			match &field.0{
-    				Statement::Declaration(_,name,_)=>{
+    				Statement::Declaration(var_type,name,_)=>{
     					if *name == *field_name{
-							asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov eax, [rbp {}]\n", field.1));
+        					get_type(var_type, field.1, asm_struct);
+							// asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov eax, [rbp {}]\n", ));
     					}
     				}
     				_=>{
-    					error(&format!("Expected declarations in structure, got : {:?} instead",field));
+    					compiler_panic(&format!("Expected declarations in structure, got : {:?} instead",field));
     				}
     			}
     		}
         }
         Expr::Unknown => {
-        	error("Unknown expression");
+        	compiler_panic("Unknown expression");
         }
         Expr::None=>{println!("encountered expr none, do nothing for now");}
         _ => {
-        	error(&format!("Expr \"{:?}\" Not yet implemented", expr));
+        	compiler_panic(&format!("Expr \"{:?}\" Not yet implemented", expr));
         }
     }
-}
-
-fn store_type(var_type: &Type, offset: i64, asm_struct: &mut AssemblyStructure){
-	match var_type{
-		Type::Bool | Type::Char => {
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov BYTE PTR [rbp {}], al\n", offset));
-		}
-		Type::Pointer(_) => {
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov QWORD PTR [rbp {}], rax\n", offset));
-		}
-		Type::Array(_,_) => {
-			println!("array declaraion, do nothing");
-		}
-		// Type::Struct(name) =>{
-		// 	// println!("AAAAAAAAAAA");
-		// }
-		_ =>{
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov [rbp {}], eax\n", offset));
-		}
-	}
 }
 
 fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struct: &mut AssemblyStructure) {
@@ -840,7 +892,7 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
             			Type::Struct(name)=>{
 							struct_name = name;
             			}
-            			_=>{error("THIS SHOULD NEVER HAPPEN");}
+            			_=>{compiler_panic("THIS SHOULD NEVER HAPPEN");}
             		}
             		let struct_fields = variable_table.symbole_table.get(struct_name).unwrap().struct_fields.clone();
             		for field in &struct_fields{
@@ -851,7 +903,7 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
             					}
             				}
             				_=>{
-            					error(&format!("Expected declarations in structure, got : {:?} instead",field));
+            					compiler_panic(&format!("Expected declarations in structure, got : {:?} instead",field));
             				}
             			}
             		}
@@ -859,7 +911,7 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
         			// error("reassigning structs not yet implemented");
         		}
         		_=>{
-        			error(&format!("Can't reassign a {:?}", variable));
+        			compiler_panic(&format!("Can't reassign a {:?}", variable));
         		}
         	}
         }
@@ -877,7 +929,7 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
             		gen_expr(condition, variable_table, asm_struct);
         		}
         		_ => {
-        			error("Invalid condition in if statement");
+        			compiler_panic("Invalid condition in if statement");
         		}
         	}
 			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    je .L{}\n", index));
@@ -909,7 +961,7 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
 			        	fields_offet.push((field.clone(), variable_table.stack_offset));
         			}
         			_=>{
-        				error("Expected field declaration in struct");
+        				compiler_panic("Expected field declaration in struct");
         			}
         		}
         	}
@@ -917,7 +969,7 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
 			variable_table.symbole_table.insert(name.clone(), VarInfo{var_type: Type::Struct(name.clone()), offset: variable_table.stack_offset, struct_fields: fields_offet.clone()});
         }
         _ => {
-        	error(&format!("{:?} Statement Not Yet Implemented", statement));
+        	compiler_panic(&format!("{:?} Statement Not Yet Implemented", statement));
         }
     }
 }
@@ -956,7 +1008,7 @@ fn gen_function(function : &Function, asm_struct: &mut AssemblyStructure){
 					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov QWORD PTR [rbp {}], {}\n", variable_table.stack_offset, regs64[i]));
 		    	}
 		    	_ => {
-		    		error("Type In Function Args Not Yet Implemented");
+		    		compiler_panic("Type In Function Args Not Yet Implemented");
 		    	}
 		    }
 		}
@@ -964,7 +1016,8 @@ fn gen_function(function : &Function, asm_struct: &mut AssemblyStructure){
     for statement in &function.body{
 		gen_statement(&statement, &mut variable_table, asm_struct);
     }
-	asm_struct.text[asm_struct.function_index].header.push_str(&format!("    sub rsp, {}\n\n", variable_table.stack_offset*(-1)));
+    println!("in function {}, stack pointer is {}", function.name, variable_table.stack_offset);
+	asm_struct.text[asm_struct.function_index].header.push_str(&format!("    sub rsp, {}\n\n", (((variable_table.stack_offset*(-1))+16-1) & !(16-1)))); // alignes to 16 bytes
 	asm_struct.function_index += 1;
 }
 
@@ -993,17 +1046,17 @@ fn is_eof(token: &Vec<TOKEN>) -> bool{
 
 fn parse_preprocessor(token: &Vec<TOKEN>){
 	if get_token(&token).name == "define"{
-		error("Not Yet Supported");
+		parsing_error("Not Yet Supported", token);
 	}
 	else if get_token(&token).name == "include"{
 		next_token();
 		if get_token(&token).token_type == "DOUBLEQUOTE"{
-			error("Not Yet Supported");
+			parsing_error("Not Yet Supported", token);
 		}
 		else{
 			let mut filename = String::new();
-			expect(token, &TOKEN{name: "<".to_string(), token_type: "LCHEV".to_string()});
-			let include = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string()});
+			expect(token, &TOKEN{name: "<".to_string(), token_type: "LCHEV".to_string(), line: 0, column: 0});
+			let include = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string(), line: 0, column: 0});
 			filename.push_str(&include.name);
 			if get_token(&token).token_type == "DECIMAL"{
 				filename.push_str(".");
@@ -1013,7 +1066,7 @@ fn parse_preprocessor(token: &Vec<TOKEN>){
 				filename.push_str(&get_token(&token).name);
 				next_token();
 			}
-			expect(token, &TOKEN{name: ">".to_string(), token_type: "RCHEV".to_string()});
+			expect(token, &TOKEN{name: ">".to_string(), token_type: "RCHEV".to_string(), line: 0, column: 0});
 		}
 	}
 }
@@ -1033,54 +1086,17 @@ fn parse_file(token : &Vec<TOKEN>) -> Program{
 }
 
 fn main(){
-	const FILE: &str = "main.c";
-	let mut raw_data = fs::read_to_string(FILE).expect("Could not open file");
-	let mut i = 0;
-	loop{
-		match raw_data.chars().nth(i){
-			Some(comment_symb_one) =>{
-				if comment_symb_one == '/'{
-					match raw_data.chars().nth(i+1){
-						Some(comment_symb_two) => {
-							if comment_symb_two == '/' {
-								while raw_data.chars().nth(i) != Some('\n') {
-									match raw_data.chars().nth(i){
-										Some(_)=>{
-											raw_data.remove(i);
-										}
-										None =>{
-											break;
-										}
-									}
-								}
-							}
-							else if comment_symb_two == '*' {
-								raw_data.remove(i);
-								raw_data.remove(i);
-								while raw_data.chars().nth(i) != Some('*') || raw_data.chars().nth(i+1) != Some('/') {
-									match raw_data.chars().nth(i){
-										Some(_)=>{
-											raw_data.remove(i);
-										}
-										None =>{
-											error("Unclosed multiline comment");
-										}
-									}
-								}
-								raw_data.remove(i);
-								raw_data.remove(i);
-
-							}
-						}
-						None => {break;}
-					}
-				}
-				i+=1;
-			}
-			None => {break;}
-		}
+	let args: Vec<String> = env::args().collect();
+	if args.len() != 3{
+		compiler_panic(&format!("Expected 2 arguments : input file and output file, got {} instead", args.len()-1));
 	}
-	let mut data = raw_data.chars();
+	let input_file = &args[1];
+	let output_file = &args[2];
+	let input_file: &str = input_file;
+	let mut raw_data = fs::read_to_string(input_file).expect("Could not open file");
+	let mut i = 0;
+	let mut data = raw_data.chars().peekable();
+	println!("raw data : \n{:?}", raw_data);
 
 	let tokens = ["int", "double", "char", "float", "bool", "return", ";", "{", "}", "(", ")", "[", "]", "+", "-", "*", "/", "=", "!", ",", "\'", "\"", "&", "true", "false", ".", "#", "define", "include", "<", ">", "if", "while", "for", "struct"];
 
@@ -1090,11 +1106,55 @@ fn main(){
 	let mut token = String::new();
 
 	let mut is_in_str_or_char = false;
+	let mut line = 1;
+	let mut column = 1;
+	let mut single_line_comment = false;
+	let mut multi_line_comment = false;
 	while continue_reading {
-		match data.nth(0)
+		match data.next()
 		{
 			Some(chara) => {
+				if single_line_comment {
+					while data.next() != Some('\n'){
+						continue;
+					}
+					line+=1;
+					single_line_comment = false;
+					continue;
+				}
+				if multi_line_comment{
+					loop {
+						let next_data = data.next();
+						if next_data == Some('*'){
+							if data.peek() == Some(&'/'){
+								data.next();
+								multi_line_comment = false;
+								break;
+							}
+						}
+						if next_data == Some('\n'){
+							line+=1;
+						}
+						// println!("skipping over chara : {:?}", next_data);
+					}
+					// println!("OUT COMMENT");
+					continue;
+				}
+				if chara == '/'{
+					match data.peek(){
+						Some('/') => {single_line_comment = true;continue}
+						Some('*') => {multi_line_comment = true;continue;}
+						_=>{}
+					}
+				}
+				// println!("pushing chara : {}", chara);
 				token.push(chara);
+				if chara == '\n'{
+					line+=1;
+					column = 0;
+				}else{
+					column += 1;
+				}
 				if chara == '\'' || chara == '\"'{
 					is_in_str_or_char = !is_in_str_or_char;
 					continue;
@@ -1104,8 +1164,8 @@ fn main(){
 					if chara == ' '{
 						for defined_token in tokens{
 							if defined_token == trimmed_token{
-								let tagged_token = tagging(&trimmed_token);
-								println!("found token pass 1 \"{}\" : \"{}\"", tagged_token.token_type, tagged_token.name);
+								let tagged_token = tagging(&trimmed_token, line, column);
+								println!("found token pass 1 \"{}\" : \"{}\" (l.{}:{})", tagged_token.token_type, tagged_token.name, line, column);
 								found_tokens.push(tagged_token);
 								token.clear();
 							}
@@ -1128,30 +1188,30 @@ fn main(){
 										}
 										trimmed_token.pop();
 										trimmed_token.remove(0);
-										let tagged_token = tagging(&first_token.to_string());
-										println!("found token pass 2.1\"{}\" : \"{}\"", tagged_token.token_type, tagged_token.name);
+										let tagged_token = tagging(&first_token.to_string(), line, column);
+										println!("found token pass 2.1 \"{}\" : \"{}\" (l.{}:{})", tagged_token.token_type, tagged_token.name, line, column);
 										found_tokens.push(tagged_token);
-										let tagged_token = TOKEN{name: trimmed_token.to_string(), token_type: token_type.to_string()};
-										println!("found token pass 2.2\"{}\" : \"{}\"", tagged_token.token_type, tagged_token.name);
+										let tagged_token = TOKEN{name: trimmed_token.to_string(), token_type: token_type.to_string(), line: 0, column: 0};
+										println!("found token pass 2.2 \"{}\" : \"{}\" (l.{}:{})", tagged_token.token_type, tagged_token.name, line, column);
 										found_tokens.push(tagged_token);
-										let tagged_token = tagging(&first_token.to_string());
-										println!("found token pass 2.3\"{}\" : \"{}\"", tagged_token.token_type, tagged_token.name);
+										let tagged_token = tagging(&first_token.to_string(), line, column);
+										println!("found token pass 2.3 \"{}\" : \"{}\" (l.{}:{})", tagged_token.token_type, tagged_token.name, line, column);
 										found_tokens.push(tagged_token);
 									}
 									else{
 										let split_tokens = trimmed_token.trim().split_whitespace();
 										// println!("split tokens in pass 2.0{:?}", split_tokens);
 										for split_token in split_tokens{
-											let tagged_token = tagging(&split_token.to_string());
-											println!("found token pass 2.0\"{}\" : \"{}\"", tagged_token.token_type, tagged_token.name);
+											let tagged_token = tagging(&split_token.to_string(), line, column);
+											println!("found token pass 2.0 \"{}\" : \"{}\" (l.{}:{})", tagged_token.token_type, tagged_token.name, line, column);
 											found_tokens.push(tagged_token);
 										}
 										// let split_tokens = tagged_token;
 									}
 								}
 								token.clear();
-								let tagged_token = tagging(&chara.to_string());
-								println!("found token pass 3\"{}\" : \"{}\"", tagged_token.token_type, tagged_token.name);
+								let tagged_token = tagging(&chara.to_string(), line, column);
+								println!("found token pass 3 \"{}\" : \"{}\" (l.{}:{})", tagged_token.token_type, tagged_token.name, line, column);
 								found_tokens.push(tagged_token);
 							}
 						}
@@ -1170,5 +1230,5 @@ fn main(){
 	println!("{:?}", program_ast);
 	let asm_output = gen_program(&program_ast);
 	println!("{}", asm_output);
-	std::fs::write("out.s", asm_output).unwrap();
+	std::fs::write(output_file, asm_output).unwrap();
 }
