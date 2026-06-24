@@ -114,6 +114,9 @@ fn tagging(token: &String, line: i64, column: i64) -> TOKEN{
 	else if token == "if"{
 		return TOKEN{name: token.to_string(), token_type: "IF".to_string(), line: line, column: column};
 	}
+	else if token == "else"{
+		return TOKEN{name: token.to_string(), token_type: "ELSE".to_string(), line: line, column: column};
+	}
 	else if token == "while"{
 		return TOKEN{name: token.to_string(), token_type: "WHILE".to_string(), line: line, column: column};
 	}
@@ -246,6 +249,7 @@ enum Statement {
 	Call(String, Vec<Expr>),
 	Reassign(Expr, Expr),
 	If(Expr, Vec<Statement>, i64),
+	Else(Vec<Statement>, i64),
 	While(Expr, Vec<Statement>, i64),
 	Struct(String, Vec<Statement>),
 	BlockScope(Vec<Statement>),
@@ -287,7 +291,7 @@ struct VarTable{
 
 struct AssemblyStructureFunction{
 	header: String,
-	body: String,
+	body: Vec<String>,
 }
 
 struct AssemblyStructure{
@@ -593,6 +597,16 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 			_ => {parsing_error("I really should move away from string token type and implement an enum", token);Statement::Unknown}
 		}
 	}
+	else if current_token.token_type == "ELSE"{
+		expect(token, &TOKEN{name: "{".to_string(), token_type: "LBRACE".to_string(), line: 0, column: 0});
+		let mut body = Vec::new();
+		let idx = update_label_index();
+		while get_token(token).token_type != "RBRACE"{
+			body.push(parse_statement(token));
+		}
+		expect(token, &TOKEN{name: "}".to_string(), token_type: "RBRACE".to_string(), line: 0, column: 0});
+		return Statement::Else(body, idx);
+	}
 	else if current_token.token_type == "STRUCT"{
 		let name = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string(), line: 0, column: 0}).name;
 		println!("struct name : {}", name);
@@ -745,7 +759,7 @@ fn gen_call(name: &String, args: &Vec<Expr>, variable_table: &mut VarTable, asm_
 			match call{
 				Expr::Call(name, args)=>{
 					gen_call(&name, &args, variable_table, asm_struct);
-    				asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov {}, eax\n", regs32[i]));
+    				asm_struct.text[asm_struct.function_index].body.push(format!("    mov {}, eax\n", regs32[i]));
 				}
 				_=>{/*do not treat*/}
 			}
@@ -755,7 +769,7 @@ fn gen_call(name: &String, args: &Vec<Expr>, variable_table: &mut VarTable, asm_
     		match &args[i]{
     			Expr::AddressOf(_) => {
     				gen_expr(&args[i], variable_table, asm_struct);
-    				asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov {}, rax\n", regs64[i]));
+    				asm_struct.text[asm_struct.function_index].body.push(format!("    mov {}, rax\n", regs64[i]));
     			}
     			Expr::Variable(name)=>{
     				gen_expr(&args[i], variable_table, asm_struct);
@@ -763,10 +777,10 @@ fn gen_call(name: &String, args: &Vec<Expr>, variable_table: &mut VarTable, asm_
     				let var_type = var.unwrap().var_type.clone();
     				match var_type{
     					Type::Array(_, _) => {
-	    					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov {}, rax\n", regs64[i]));
+	    					asm_struct.text[asm_struct.function_index].body.push(format!("    mov {}, rax\n", regs64[i]));
     					}
     					_ => {
-	    					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov {}, eax\n", regs32[i]));
+	    					asm_struct.text[asm_struct.function_index].body.push(format!("    mov {}, eax\n", regs32[i]));
     					}
     				}
     				// println!("!!!!!!!!!variable type : {:?}", var_type);
@@ -774,7 +788,7 @@ fn gen_call(name: &String, args: &Vec<Expr>, variable_table: &mut VarTable, asm_
     			Expr::Call(_,_)=>{/*do not treat*/}
     			_ => {
     				gen_expr(&args[i], variable_table, asm_struct);
-	    			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov {}, eax\n", regs32[i]));
+	    			asm_struct.text[asm_struct.function_index].body.push(format!("    mov {}, eax\n", regs32[i]));
     			}
     		}
 		}
@@ -783,18 +797,18 @@ fn gen_call(name: &String, args: &Vec<Expr>, variable_table: &mut VarTable, asm_
 	// i did not yet implement type checking to detect variadics so we manually check if the function is printf and allways null out eax
 	// since we also don't support floats yet
 	if name == "printf" || name == "sprintf"{
-		asm_struct.text[asm_struct.function_index].body.push_str("    xor eax, eax\n");
+		asm_struct.text[asm_struct.function_index].body.push("    xor eax, eax\n".to_string());
 	}
-	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    call {}\n", name));
+	asm_struct.text[asm_struct.function_index].body.push(format!("    call {}\n", name));
 }
 
 fn store_type(var_type: &Type, offset: i64, asm_struct: &mut AssemblyStructure){
 	match var_type{
 		Type::Bool | Type::Char => {
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov BYTE PTR [rbp {}], al\n", offset));
+			asm_struct.text[asm_struct.function_index].body.push(format!("    mov BYTE PTR [rbp {}], al\n", offset));
 		}
 		Type::Pointer(_) => {
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov QWORD PTR [rbp {}], rax\n", offset));
+			asm_struct.text[asm_struct.function_index].body.push(format!("    mov QWORD PTR [rbp {}], rax\n", offset));
 		}
 		Type::Array(_,_) => {
 			println!("array declaraion, do nothing");
@@ -803,7 +817,7 @@ fn store_type(var_type: &Type, offset: i64, asm_struct: &mut AssemblyStructure){
 		// 	// println!("AAAAAAAAAAA");
 		// }
 		_ =>{
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov [rbp {}], eax\n", offset));
+			asm_struct.text[asm_struct.function_index].body.push(format!("    mov [rbp {}], eax\n", offset));
 		}
 	}
 }
@@ -811,16 +825,16 @@ fn store_type(var_type: &Type, offset: i64, asm_struct: &mut AssemblyStructure){
 fn get_type(var_type: &Type, offset: i64, asm_struct: &mut AssemblyStructure){
 	match var_type{
 		Type::Int => {
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov eax, [rbp {}]\n", offset));
+			asm_struct.text[asm_struct.function_index].body.push(format!("    mov eax, [rbp {}]\n", offset));
 		}
 		Type::Char | Type::Bool => {
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    movzx eax, BYTE PTR [rbp {}]\n", offset));
+			asm_struct.text[asm_struct.function_index].body.push(format!("    movzx eax, BYTE PTR [rbp {}]\n", offset));
 		}
 		Type::Pointer(_) => {
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov rax, QWORD PTR [rbp {}]\n", offset));
+			asm_struct.text[asm_struct.function_index].body.push(format!("    mov rax, QWORD PTR [rbp {}]\n", offset));
 		}
 		Type::Array(_, _) => {
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    lea rax, [rbp {}]\n", offset));
+			asm_struct.text[asm_struct.function_index].body.push(format!("    lea rax, [rbp {}]\n", offset));
 		}
 		_ =>{
 			compiler_panic(&format!("Variable Type {:?} Not Yet Implemented", var_type));
@@ -830,46 +844,46 @@ fn get_type(var_type: &Type, offset: i64, asm_struct: &mut AssemblyStructure){
 
 fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut AssemblyStructure) {
     match expr {
-        Expr::IntLiteral(n) => asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov eax, {}\n", n)),
-        Expr::BoolLiteral(n) => asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov eax, {}\n", *n as u8)),
-        Expr::CharLiteral(n) => asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov eax, {}\n", n)),
+        Expr::IntLiteral(n) => asm_struct.text[asm_struct.function_index].body.push(format!("    mov eax, {}\n", n)),
+        Expr::BoolLiteral(n) => asm_struct.text[asm_struct.function_index].body.push(format!("    mov eax, {}\n", *n as u8)),
+        Expr::CharLiteral(n) => asm_struct.text[asm_struct.function_index].body.push(format!("    mov eax, {}\n", n)),
         Expr::Binary(left, op, right) =>{
         	gen_expr(left, variable_table, asm_struct);
-        	asm_struct.text[asm_struct.function_index].body.push_str("    push rax\n");
+        	asm_struct.text[asm_struct.function_index].body.push("    push rax\n".to_string());
 
     		gen_expr(right, variable_table, asm_struct);
-        	asm_struct.text[asm_struct.function_index].body.push_str("    pop rcx\n");
+        	asm_struct.text[asm_struct.function_index].body.push("    pop rcx\n".to_string());
         	match op{
         		BinaryOp::PLUS=>{
-        			asm_struct.text[asm_struct.function_index].body.push_str("    add eax, ecx\n");
+        			asm_struct.text[asm_struct.function_index].body.push("    add eax, ecx\n".to_string());
         		}
         		BinaryOp::MINUS=>{
-        			asm_struct.text[asm_struct.function_index].body.push_str("    sub ecx, eax\n");
-        			asm_struct.text[asm_struct.function_index].body.push_str("    mov eax, ecx\n");
+        			asm_struct.text[asm_struct.function_index].body.push("    sub ecx, eax\n".to_string());
+        			asm_struct.text[asm_struct.function_index].body.push("    mov eax, ecx\n".to_string());
         		}
         		BinaryOp::MULTIPLICATION=>{
-        			asm_struct.text[asm_struct.function_index].body.push_str("    imul rax, rcx\n");
+        			asm_struct.text[asm_struct.function_index].body.push("    imul rax, rcx\n".to_string());
         		}
         		BinaryOp::DIVISION=>{
-        			asm_struct.text[asm_struct.function_index].body.push_str("    mov r10d, eax\n");
-                    asm_struct.text[asm_struct.function_index].body.push_str("    mov eax, ecx\n");
-                    asm_struct.text[asm_struct.function_index].body.push_str("    cdq\n");
-                    asm_struct.text[asm_struct.function_index].body.push_str("    idiv r10d\n");
+        			asm_struct.text[asm_struct.function_index].body.push("    mov r10d, eax\n".to_string());
+                    asm_struct.text[asm_struct.function_index].body.push("    mov eax, ecx\n".to_string());
+                    asm_struct.text[asm_struct.function_index].body.push("    cdq\n".to_string());
+                    asm_struct.text[asm_struct.function_index].body.push("    idiv r10d\n".to_string());
         		}
         		BinaryOp::EQUAL | BinaryOp::NEQUAL | BinaryOp::GREATER | BinaryOp::GREATEREQ | BinaryOp::LESSER | BinaryOp::LESSEREQ => {
-            		asm_struct.text[asm_struct.function_index].body.push_str(&format!("    cmp ecx, eax\n"));
+            		asm_struct.text[asm_struct.function_index].body.push(format!("    cmp ecx, eax\n"));
             		match op {
-            			BinaryOp::EQUAL=>{asm_struct.text[asm_struct.function_index].body.push_str(&format!("    sete al\n"));}
-            			BinaryOp::NEQUAL=>{asm_struct.text[asm_struct.function_index].body.push_str(&format!("    setne al\n"));}
-            			BinaryOp::GREATER=>{asm_struct.text[asm_struct.function_index].body.push_str(&format!("    setg al\n"));}
-            			BinaryOp::GREATEREQ=>{asm_struct.text[asm_struct.function_index].body.push_str(&format!("    setge al\n"));}
-            			BinaryOp::LESSER=>{asm_struct.text[asm_struct.function_index].body.push_str(&format!("    setl al\n"));}
-            			BinaryOp::LESSEREQ=>{asm_struct.text[asm_struct.function_index].body.push_str(&format!("    setle al\n"));}
+            			BinaryOp::EQUAL=>{asm_struct.text[asm_struct.function_index].body.push(format!("    sete al\n"));}
+            			BinaryOp::NEQUAL=>{asm_struct.text[asm_struct.function_index].body.push(format!("    setne al\n"));}
+            			BinaryOp::GREATER=>{asm_struct.text[asm_struct.function_index].body.push(format!("    setg al\n"));}
+            			BinaryOp::GREATEREQ=>{asm_struct.text[asm_struct.function_index].body.push(format!("    setge al\n"));}
+            			BinaryOp::LESSER=>{asm_struct.text[asm_struct.function_index].body.push(format!("    setl al\n"));}
+            			BinaryOp::LESSEREQ=>{asm_struct.text[asm_struct.function_index].body.push(format!("    setle al\n"));}
             			_ =>{compiler_panic("THIS SHOULD NEVER HAPPEN");}
             		}
-            		// asm_struct.text[asm_struct.function_index].body.push_str(&format!("    sete al\n"));
-            		asm_struct.text[asm_struct.function_index].body.push_str(&format!("    movzx eax, al\n"));
-            		asm_struct.text[asm_struct.function_index].body.push_str(&format!("    cmp eax, 0\n"));
+            		// asm_struct.text[asm_struct.function_index].body.push(format!("    sete al\n"));
+            		asm_struct.text[asm_struct.function_index].body.push(format!("    movzx eax, al\n"));
+            		asm_struct.text[asm_struct.function_index].body.push(format!("    cmp eax, 0\n"));
         		}
         		BinaryOp::UNKNOWN =>{
         			compiler_panic("Somehow stumbeled uppon unknown operation, this should never happen");
@@ -889,27 +903,27 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
         Expr::StringLiteral(string, index) => {
         	asm_struct.data.push_str(&format!(".LC{}:\n", index));
         	asm_struct.data.push_str(&format!("    .string \"{}\"\n", string));
-        	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov rax, OFFSET FLAT: .LC{}\n", index));
+        	asm_struct.text[asm_struct.function_index].body.push(format!("    mov rax, OFFSET FLAT: .LC{}\n", index));
         },
         Expr::Dereference(name)=>{
     		let variable = get_scope_variable(variable_table, name);
         	// println!("dereferincig type : {:?}", variable.unwrap().var_type);
         	match variable.as_ref().unwrap().var_type{
         		Type::Pointer(_)=>{
-		        	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov rax, QWORD PTR [rbp {}]\n", variable.unwrap().offset));
-		        	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    movzx eax, BYTE PTR [rax]\n"));
+		        	asm_struct.text[asm_struct.function_index].body.push(format!("    mov rax, QWORD PTR [rbp {}]\n", variable.unwrap().offset));
+		        	asm_struct.text[asm_struct.function_index].body.push(format!("    movzx eax, BYTE PTR [rax]\n"));
         		}
         		Type::Array(_,_)=>{
-		        	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    movzx eax, BYTE PTR [rbp {}]\n", variable.unwrap().offset));
+		        	asm_struct.text[asm_struct.function_index].body.push(format!("    movzx eax, BYTE PTR [rbp {}]\n", variable.unwrap().offset));
         		}
         		_=>{
         			compiler_panic("Cannot dereference this type");
         		}
         	}
-        	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    movsx eax, al\n"));
+        	asm_struct.text[asm_struct.function_index].body.push(format!("    movsx eax, al\n"));
         }
         Expr::AddressOf(_) => {
-        	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    lea rax, [rbp-8]\n"));
+        	asm_struct.text[asm_struct.function_index].body.push(format!("    lea rax, [rbp-8]\n"));
         }
         Expr::Struct(instance_name, field_name)=>{
         	println!("instance_name : {}, field_name : {}", instance_name, field_name);
@@ -928,7 +942,7 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
     				Statement::Declaration(var_type,name,_)=>{
     					if *name == *field_name{
         					get_type(var_type, field.1, asm_struct);
-							// asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov eax, [rbp {}]\n", ));
+							// asm_struct.text[asm_struct.function_index].body.push(format!("    mov eax, [rbp {}]\n", ));
     					}
     				}
     				_=>{
@@ -952,9 +966,9 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
     match statement {
         Statement::Return(expr) => {
             gen_expr(expr, variable_table, asm_struct);
-            asm_struct.text[asm_struct.function_index].body.push_str("    mov rsp, rbp\n");
-            asm_struct.text[asm_struct.function_index].body.push_str("    pop rbp\n");
-            asm_struct.text[asm_struct.function_index].body.push_str("    ret");
+            asm_struct.text[asm_struct.function_index].body.push("    mov rsp, rbp\n".to_string());
+            asm_struct.text[asm_struct.function_index].body.push("    pop rbp\n".to_string());
+            asm_struct.text[asm_struct.function_index].body.push("    ret".to_string());
         }
         Statement::Declaration(var_type, name, expr) => {
             gen_expr(expr, variable_table, asm_struct);
@@ -973,7 +987,7 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
         		Expr::Variable(name)=>{
 			        gen_expr(expr, variable_table, asm_struct);
 		            let var_offset = get_scope_variable(variable_table, name).unwrap().offset;
-					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov [rbp {}], eax\n", var_offset));
+					asm_struct.text[asm_struct.function_index].body.push(format!("    mov [rbp {}], eax\n", var_offset));
         		},
         		Expr::Struct(instance_name, field_name)=>{
         			println!("instance_name : {}, field_name : {}", instance_name, field_name);
@@ -1013,11 +1027,11 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
         	match condition{
         		Expr::Variable(name) => {
             		let var_offset = get_scope_variable(variable_table, name).unwrap().offset;
-					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    cmp BYTE PTR [rbp {}], 0\n", var_offset));
+					asm_struct.text[asm_struct.function_index].body.push(format!("    cmp BYTE PTR [rbp {}], 0\n", var_offset));
         		}
         		Expr::IntLiteral(integer) => {
-					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov eax, {}\n", integer));
-					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    cmp eax, 0\n"));
+					asm_struct.text[asm_struct.function_index].body.push(format!("    mov eax, {}\n", integer));
+					asm_struct.text[asm_struct.function_index].body.push(format!("    cmp eax, 0\n"));
         		}
         		Expr::Binary(_, _, _)=>{
             		gen_expr(condition, variable_table, asm_struct);
@@ -1026,13 +1040,24 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
         			compiler_panic("Invalid condition in if statement");
         		}
         	}
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    je .L{}\n", index));
+			asm_struct.text[asm_struct.function_index].body.push(format!("    je .L{}\n", index));
 			for if_body_statement in statement_body{
 				println!("statement : {:?}\n", if_body_statement);
 				gen_statement(if_body_statement, variable_table, asm_struct);
 			}
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!(".L{}:\n", index));
+			asm_struct.text[asm_struct.function_index].body.push(format!(".L{}:\n", index));
 			variable_table.symbole_table.pop();
+        }
+        Statement::Else(body, index)=>{
+        	let mut asm_body = &mut asm_struct.text[asm_struct.function_index].body;
+			asm_body.insert(asm_body.len()-1, format!("    jmp .L{}\n", index));
+        	variable_table.symbole_table.push(HashMap::new());
+        	for else_body_statement in body{
+				println!("statement : {:?}\n", else_body_statement);
+				gen_statement(else_body_statement, variable_table, asm_struct);
+			}
+			variable_table.symbole_table.pop();
+			asm_struct.text[asm_struct.function_index].body.push(format!(".L{}:\n", index));
         }
         Statement::While(condition, statement_body, index)=>{
 			unsafe{
@@ -1040,22 +1065,22 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
 			}
         	variable_table.symbole_table.push(HashMap::new());
         	let first_index = index;
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    jmp .L{}\n", first_index));
+			asm_struct.text[asm_struct.function_index].body.push(format!("    jmp .L{}\n", first_index));
 			unsafe{
 				COND_CHECK_LOCS.push(*first_index);
 			}
         	let second_index = update_label_index();
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!(".L{}:\n", second_index));
-        	for if_body_statement in statement_body{
-				gen_statement(if_body_statement, variable_table, asm_struct);
+			asm_struct.text[asm_struct.function_index].body.push(format!(".L{}:\n", second_index));
+        	for while_body_statement in statement_body{
+				gen_statement(while_body_statement, variable_table, asm_struct);
 			}
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!(".L{}:\n", first_index));
+			asm_struct.text[asm_struct.function_index].body.push(format!(".L{}:\n", first_index));
             gen_expr(condition, variable_table, asm_struct);
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    jne .L{}\n", second_index));
+			asm_struct.text[asm_struct.function_index].body.push(format!("    jne .L{}\n", second_index));
 			let break_idx = pop_last_break_idx();
 			println!("break idx : {:?}",break_idx);
 			if break_idx != None{
-				asm_struct.text[asm_struct.function_index].body.push_str(&format!(".L{} :\n", break_idx.unwrap()));
+				asm_struct.text[asm_struct.function_index].body.push(format!(".L{} :\n", break_idx.unwrap()));
 			}
 			unsafe{
 				LOOP_CHECK.pop();
@@ -1094,13 +1119,13 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
         		}
         	}
         	append_break_idx(*idx);
-			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    jmp .L{}\n", idx));
+			asm_struct.text[asm_struct.function_index].body.push(format!("    jmp .L{}\n", idx));
         }
         Statement::Continue=>{
         	unsafe{
         		let cond_loc = COND_CHECK_LOCS.pop();
         		if cond_loc != None{
-					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    jmp .L{}\n", cond_loc.unwrap()));
+					asm_struct.text[asm_struct.function_index].body.push(format!("    jmp .L{}\n", cond_loc.unwrap()));
 				}
 				else{compiler_panic("\"continue\" shoud be called inside a loop");}
         	}
@@ -1121,7 +1146,7 @@ fn gen_function(function : &Function, asm_struct: &mut AssemblyStructure){
 	};
 	variable_table.symbole_table.push(HashMap::new());
 
-	asm_struct.text.push(AssemblyStructureFunction{header: String::new(), body: String::new()});
+	asm_struct.text.push(AssemblyStructureFunction{header: String::new(), body: Vec::new()});
 
 	asm_struct.text[asm_struct.function_index].header.push_str("\n.global ");
 	asm_struct.text[asm_struct.function_index].header.push_str(&function.name);
@@ -1142,13 +1167,13 @@ fn gen_function(function : &Function, asm_struct: &mut AssemblyStructure){
 		    variable_table.symbole_table[symbole_table_index].insert(function.args[i].name.clone(), VarInfo{var_type: function.args[i].var_type.clone(), offset: variable_table.stack_offset, struct_fields: Vec::new()});
 		    match function.args[i].var_type{
 		    	Type::Char => {
-					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov BYTE PTR [rbp {}], {}\n", variable_table.stack_offset, regs8[i]));
+					asm_struct.text[asm_struct.function_index].body.push(format!("    mov BYTE PTR [rbp {}], {}\n", variable_table.stack_offset, regs8[i]));
 		    	}
 		    	Type::Int => {
-					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov [rbp {}], {}\n", variable_table.stack_offset, regs32[i]));
+					asm_struct.text[asm_struct.function_index].body.push(format!("    mov [rbp {}], {}\n", variable_table.stack_offset, regs32[i]));
 		    	}
 		    	Type::Pointer(_) => {
-					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov QWORD PTR [rbp {}], {}\n", variable_table.stack_offset, regs64[i]));
+					asm_struct.text[asm_struct.function_index].body.push(format!("    mov QWORD PTR [rbp {}], {}\n", variable_table.stack_offset, regs64[i]));
 		    	}
 		    	_ => {
 		    		compiler_panic("Type In Function Args Not Yet Implemented");
@@ -1175,7 +1200,9 @@ fn gen_program(program_ast: &Program) -> String{
     final_assembly.push_str("\n");
     for function in asm_struct.text{
     	final_assembly.push_str(&function.header);
-    	final_assembly.push_str(&function.body);
+    	for statement in &function.body{
+    		final_assembly.push_str(statement);
+    	}
     	final_assembly.push_str("\n");
     }
     final_assembly
@@ -1240,7 +1267,7 @@ fn main(){
 	let mut data = raw_data.chars().peekable();
 	println!("raw data : \n{:?}", raw_data);
 
-	let tokens = ["int", "double", "char", "float", "bool", "return", ";", "{", "}", "(", ")", "[", "]", "+", "-", "*", "/", "=", "!", ",", "\'", "\"", "&", "true", "false", ".", "#", "define", "include", "<", ">", "if", "while", "for", "struct", "break", "continue"];
+	let tokens = ["int", "double", "char", "float", "bool", "return", ";", "{", "}", "(", ")", "[", "]", "+", "-", "*", "/", "=", "!", ",", "\'", "\"", "&", "true", "false", ".", "#", "define", "include", "<", ">", "if", "else", "while", "for", "struct", "break", "continue"];
 
 	let mut found_tokens:Vec<TOKEN> = Vec::new();
 
