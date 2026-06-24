@@ -27,6 +27,10 @@ struct TOKEN{
 static mut TOKEN_INDEX: i64 = 0;
 static mut STRING_INDEX: i64 = 0;
 static mut LABEL_INDEX: i64 = 0;
+static mut BREAK_IDX_VEC: Vec<i64> = Vec::new();
+static mut LOOP_CHECK: Vec<bool> = Vec::new(); // used to track if we are in a loop
+static mut COND_CHECK_LOCS: Vec<i64> = Vec::new();
+
 
 fn tagging(token: &String, line: i64, column: i64) -> TOKEN{
 	if is_type(&token){
@@ -119,6 +123,12 @@ fn tagging(token: &String, line: i64, column: i64) -> TOKEN{
 	else if token == "struct"{
 		return TOKEN{name: token.to_string(), token_type: "STRUCT".to_string(), line: line, column: column};
 	}
+	else if token == "break"{
+		return TOKEN{name: token.to_string(), token_type: "BREAK".to_string(), line: line, column: column};
+	}
+	else if token == "continue"{
+		return TOKEN{name: token.to_string(), token_type: "CONTINUE".to_string(), line: line, column: column};
+	}
 	else {
 		return TOKEN{name: token.to_string(), token_type: "NAME".to_string(), line: line, column: column};
 	}
@@ -155,7 +165,7 @@ fn get_offset(var_type: &Type) -> i64{
 		Type::Double => 8,
 		Type::Pointer(_) => 8,
 		Type::Array(arr_type, size) => get_offset(arr_type)*size,
-		Type::Struct(name) => 0,
+		Type::Struct(_) => 0,
 		Type::Unknown => 0,
 	}
 }
@@ -238,6 +248,9 @@ enum Statement {
 	If(Expr, Vec<Statement>, i64),
 	While(Expr, Vec<Statement>, i64),
 	Struct(String, Vec<Statement>),
+	BlockScope(Vec<Statement>),
+	Break(i64),
+	Continue,
 	Unknown,
 }
 
@@ -259,7 +272,7 @@ struct Program{
 	functions: Vec<Function>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct VarInfo{
 	offset: i64,
 	var_type: Type,
@@ -268,7 +281,7 @@ struct VarInfo{
 }
 
 struct VarTable{
-	symbole_table: HashMap<String, VarInfo>,
+	symbole_table: Vec<HashMap<String, VarInfo>>,
 	stack_offset: i64,
 }
 
@@ -329,6 +342,20 @@ fn update_label_index()->i64{
 		let index = LABEL_INDEX;
 		LABEL_INDEX+=1;
 		return index;
+	}
+}
+
+fn pop_last_break_idx() -> Option<i64>{
+	// let idx = ;
+	unsafe{
+		return BREAK_IDX_VEC.pop();
+	}
+}
+
+fn append_break_idx(idx: i64){
+	// let idx = ;
+	unsafe{
+		return BREAK_IDX_VEC.push(idx);
 	}
 }
 
@@ -528,6 +555,23 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
 			return Statement::Reassign(Expr::Struct(struct_instance_name, field_name.name), expression);
 		}
+		else if get_token(token).token_type == "PLUS"{
+			next_token();
+			if get_token(token).token_type == "PLUS"{
+				next_token();
+				if get_token(token).token_type == "SEMICOLON"{
+					next_token();
+				} else if get_token(token).token_type != "RPAREN" {
+					compiler_panic(&format!("Expected SEMICOLON or RPAREN, got {}", get_token(token).token_type));
+				}
+				return Statement::Reassign(Expr::Variable(current_token.name.clone()), Expr::Binary(Box::new(Expr::Variable(current_token.name.clone())), BinaryOp::PLUS, Box::new(Expr::IntLiteral(1))));
+			}
+		}
+		else if get_token(token).token_type == "SEMICOLON"{
+			// don't throw an error, but don't do anything
+			next_token();
+			return Statement::Unknown;
+		}
 		parsing_error(&format!("Statement invalid, after name expected LPAREN or ASSIGN, got {} : {}", get_token(token).token_type, get_token(token).name), token);
 		return Statement::Unknown;
 	}
@@ -587,6 +631,46 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 		}
 		else{parsing_error(&format!("invalid structure declaration, found token : {:?}", get_token(&token).token_type), token);Statement::Unknown}
 	}
+	else if current_token.token_type == "LBRACE"{
+		let mut body = Vec::new();
+		while get_token(token).token_type != "RBRACE"{
+			body.push(parse_statement(token));
+		}
+		expect(token, &TOKEN{name: "}".to_string(), token_type: "RBRACE".to_string(), line: 0, column: 0});
+		return Statement::BlockScope(body);
+	}
+	else if current_token.token_type == "FOR"{
+		expect(token, &TOKEN{name: "(".to_string(), token_type: "LPAREN".to_string(), line: 0, column: 0});
+		let mut block_scope_body = Vec::new();
+		// TODO, support for if just for(i; i<...), instead of (int i =0;...)
+		// also support syntax for (;;)
+		block_scope_body.push(parse_statement(token));// parse int i = 0; or just i = 0
+		// expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
+		let condition = parse_expression(token, 0);
+		expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
+		let i_reassigment = parse_statement(token);
+		expect(token, &TOKEN{name: ")".to_string(), token_type: "RPAREN".to_string(), line: 0, column: 0});
+		expect(token, &TOKEN{name: "{".to_string(), token_type: "LBRACE".to_string(), line: 0, column: 0});
+		let mut for_loop_body = Vec::new();
+		while get_token(token).token_type != "RBRACE"{
+			for_loop_body.push(parse_statement(token));
+		}
+		for_loop_body.push(i_reassigment);
+		let idx = update_label_index();
+		block_scope_body.push(Statement::While(condition, for_loop_body, idx));
+		expect(token, &TOKEN{name: "}".to_string(), token_type: "RBRACE".to_string(), line: 0, column: 0});
+		return Statement::BlockScope(block_scope_body);
+	}
+	else if current_token.token_type == "BREAK"{
+		let break_statement = Statement::Break(update_label_index());
+		expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
+		return break_statement;
+	}
+	else if current_token.token_type == "CONTINUE"{
+		let break_statement = Statement::Continue;
+		expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
+		return break_statement;
+	}
 	else{
 		parsing_error(&format!("Invalid token found in statement : {} : {}", current_token.token_type, current_token.name), token);
 		return Statement::Unknown;
@@ -634,6 +718,16 @@ fn parse_function(token : &Vec<TOKEN>) -> Function{
 	return Function{name: fn_name.name, args: arguments, body: body};
 }
 
+fn get_scope_variable(variable_table: &mut VarTable, var_name: &str) -> Option<VarInfo>{
+	for scope in variable_table.symbole_table.iter().rev(){
+		if let Some(v) = scope.get(var_name){
+			return Some(v.clone());
+		}
+	}
+    compiler_panic(&format!("Variable \"{}\" used before declaration", var_name));
+    return None;
+}
+
 fn gen_call(name: &String, args: &Vec<Expr>, variable_table: &mut VarTable, asm_struct: &mut AssemblyStructure){
 	if args.len() > 0{
 		let regs64 = vec!["rdi", "rsi", "rdx", "rcx", "r8", "r9"];
@@ -665,7 +759,8 @@ fn gen_call(name: &String, args: &Vec<Expr>, variable_table: &mut VarTable, asm_
     			}
     			Expr::Variable(name)=>{
     				gen_expr(&args[i], variable_table, asm_struct);
-    				let var_type = variable_table.symbole_table.get(name).unwrap().var_type.clone();
+    				let var = get_scope_variable(variable_table, name);
+    				let var_type = var.unwrap().var_type.clone();
     				match var_type{
     					Type::Array(_, _) => {
 	    					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov {}, rax\n", regs64[i]));
@@ -779,18 +874,14 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
         		BinaryOp::UNKNOWN =>{
         			compiler_panic("Somehow stumbeled uppon unknown operation, this should never happen");
         		}
-        		_ => {
-        			compiler_panic("Binary Operator Not Yet Implemented");
-        		}
+        		// _ => {
+        		// 	compiler_panic("Binary Operator Not Yet Implemented");
+        		// }
         	}
         } ,
         Expr::Variable(name) => {
-        	if let Some(var_info) = variable_table.symbole_table.get(name){
-        		get_type(&var_info.var_type, var_info.offset, asm_struct);
-        	}
-        	else{
-        		compiler_panic(&format!("Variable \"{}\" used before declaration", name));
-        	}
+    		let var_info = get_scope_variable(variable_table, name);
+        	get_type(&var_info.as_ref().unwrap().var_type, var_info.as_ref().unwrap().offset, asm_struct);
         },
         Expr::Call(name, args) => {
         	gen_call(name, args, variable_table, asm_struct);
@@ -801,9 +892,9 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
         	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov rax, OFFSET FLAT: .LC{}\n", index));
         },
         Expr::Dereference(name)=>{
-        	let variable = variable_table.symbole_table.get(name);
+    		let variable = get_scope_variable(variable_table, name);
         	// println!("dereferincig type : {:?}", variable.unwrap().var_type);
-        	match variable.unwrap().var_type{
+        	match variable.as_ref().unwrap().var_type{
         		Type::Pointer(_)=>{
 		        	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov rax, QWORD PTR [rbp {}]\n", variable.unwrap().offset));
 		        	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    movzx eax, BYTE PTR [rax]\n"));
@@ -817,13 +908,13 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
         	}
         	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    movsx eax, al\n"));
         }
-        Expr::AddressOf(name) => {
+        Expr::AddressOf(_) => {
         	asm_struct.text[asm_struct.function_index].body.push_str(&format!("    lea rax, [rbp-8]\n"));
         }
         Expr::Struct(instance_name, field_name)=>{
         	println!("instance_name : {}, field_name : {}", instance_name, field_name);
     		println!("Symbol table : {:?}", variable_table.symbole_table);
-    		let struct_type_name = &variable_table.symbole_table.get(instance_name).unwrap().var_type;
+    		let struct_type_name = &get_scope_variable(variable_table, instance_name).unwrap().var_type;
     		let mut struct_name = "";
     		match struct_type_name{
     			Type::Struct(name)=>{
@@ -831,7 +922,7 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
     			}
     			_=>{compiler_panic("THIS SHOULD NEVER HAPPEN");}
     		}
-    		let struct_info = variable_table.symbole_table.get(struct_name).unwrap();
+    		let struct_info = get_scope_variable(variable_table, struct_name).unwrap();
     		for field in &struct_info.struct_fields{
     			match &field.0{
     				Statement::Declaration(var_type,name,_)=>{
@@ -856,6 +947,7 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
     }
 }
 
+
 fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struct: &mut AssemblyStructure) {
     match statement {
         Statement::Return(expr) => {
@@ -867,7 +959,8 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
         Statement::Declaration(var_type, name, expr) => {
             gen_expr(expr, variable_table, asm_struct);
             variable_table.stack_offset -= get_offset(var_type);
-            variable_table.symbole_table.insert(name.clone(), VarInfo{var_type: var_type.clone(), offset: variable_table.stack_offset, struct_fields: Vec::new()});
+            let symbole_table_index = variable_table.symbole_table.len()-1;
+            variable_table.symbole_table[symbole_table_index].insert(name.clone(), VarInfo{var_type: var_type.clone(), offset: variable_table.stack_offset, struct_fields: Vec::new()});
             if *expr != Expr::None{
             	store_type(var_type, variable_table.stack_offset, asm_struct);
             }
@@ -879,14 +972,14 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
         	match variable{
         		Expr::Variable(name)=>{
 			        gen_expr(expr, variable_table, asm_struct);
-		            let var_offset = variable_table.symbole_table.get(name).unwrap().offset;
+		            let var_offset = get_scope_variable(variable_table, name).unwrap().offset;
 					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov [rbp {}], eax\n", var_offset));
         		},
         		Expr::Struct(instance_name, field_name)=>{
         			println!("instance_name : {}, field_name : {}", instance_name, field_name);
             		println!("Symbol table : {:?}", variable_table.symbole_table);
 			        gen_expr(expr, variable_table, asm_struct);
-            		let struct_type_name = &variable_table.symbole_table.get(instance_name).unwrap().var_type;
+            		let struct_type_name = &get_scope_variable(variable_table, instance_name).unwrap().var_type;
             		let mut struct_name = "";
             		match struct_type_name{
             			Type::Struct(name)=>{
@@ -894,7 +987,7 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
             			}
             			_=>{compiler_panic("THIS SHOULD NEVER HAPPEN");}
             		}
-            		let struct_fields = variable_table.symbole_table.get(struct_name).unwrap().struct_fields.clone();
+            		let struct_fields = get_scope_variable(variable_table, struct_name).unwrap().struct_fields.clone();
             		for field in &struct_fields{
             			match &field.0{
             				Statement::Declaration(var_type,name,_)=>{
@@ -916,16 +1009,17 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
         	}
         }
         Statement::If(condition, statement_body, index) => {
+        	variable_table.symbole_table.push(HashMap::new());
         	match condition{
         		Expr::Variable(name) => {
-            		let var_offset = variable_table.symbole_table.get(name).unwrap().offset;
+            		let var_offset = get_scope_variable(variable_table, name).unwrap().offset;
 					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    cmp BYTE PTR [rbp {}], 0\n", var_offset));
         		}
         		Expr::IntLiteral(integer) => {
 					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov eax, {}\n", integer));
 					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    cmp eax, 0\n"));
         		}
-        		Expr::Binary(_, op, _)=>{
+        		Expr::Binary(_, _, _)=>{
             		gen_expr(condition, variable_table, asm_struct);
         		}
         		_ => {
@@ -938,25 +1032,42 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
 				gen_statement(if_body_statement, variable_table, asm_struct);
 			}
 			asm_struct.text[asm_struct.function_index].body.push_str(&format!(".L{}:\n", index));
+			variable_table.symbole_table.pop();
         }
         Statement::While(condition, statement_body, index)=>{
+			unsafe{
+				LOOP_CHECK.push(true);
+			}
+        	variable_table.symbole_table.push(HashMap::new());
         	let first_index = index;
 			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    jmp .L{}\n", first_index));
+			unsafe{
+				COND_CHECK_LOCS.push(*first_index);
+			}
         	let second_index = update_label_index();
 			asm_struct.text[asm_struct.function_index].body.push_str(&format!(".L{}:\n", second_index));
         	for if_body_statement in statement_body{
-				println!("statement : {:?}\n", if_body_statement);
 				gen_statement(if_body_statement, variable_table, asm_struct);
 			}
 			asm_struct.text[asm_struct.function_index].body.push_str(&format!(".L{}:\n", first_index));
             gen_expr(condition, variable_table, asm_struct);
 			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    jne .L{}\n", second_index));
+			let break_idx = pop_last_break_idx();
+			println!("break idx : {:?}",break_idx);
+			if break_idx != None{
+				asm_struct.text[asm_struct.function_index].body.push_str(&format!(".L{} :\n", break_idx.unwrap()));
+			}
+			unsafe{
+				LOOP_CHECK.pop();
+				COND_CHECK_LOCS.pop();
+			}
+			variable_table.symbole_table.pop();
         }
         Statement::Struct(name, fields)=>{
         	let mut fields_offet = Vec::new();
         	for field in fields{
         		match field{
-        			Statement::Declaration(var_type, name, expr)=>{
+        			Statement::Declaration(var_type, _, _)=>{
 			        	variable_table.stack_offset -= get_offset(&var_type);
 			        	fields_offet.push((field.clone(), variable_table.stack_offset));
         			}
@@ -966,7 +1077,36 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
         		}
         	}
         	// println!("struct declaration, do nothing for now");
-			variable_table.symbole_table.insert(name.clone(), VarInfo{var_type: Type::Struct(name.clone()), offset: variable_table.stack_offset, struct_fields: fields_offet.clone()});
+        	let symbole_table_index = variable_table.symbole_table.len()-1;
+			variable_table.symbole_table[symbole_table_index].insert(name.clone(), VarInfo{var_type: Type::Struct(name.clone()), offset: variable_table.stack_offset, struct_fields: fields_offet.clone()});
+        }
+        Statement::BlockScope(statements)=>{
+        	variable_table.symbole_table.push(HashMap::new());
+        	for statement in statements{
+        		gen_statement(statement, variable_table, asm_struct);
+        	}
+			variable_table.symbole_table.pop();
+        }
+        Statement::Break(idx)=>{
+        	unsafe {
+        		if LOOP_CHECK.len() == 0{
+        			compiler_panic("\"break\" shoud be called inside a loop")
+        		}
+        	}
+        	append_break_idx(*idx);
+			asm_struct.text[asm_struct.function_index].body.push_str(&format!("    jmp .L{}\n", idx));
+        }
+        Statement::Continue=>{
+        	unsafe{
+        		let cond_loc = COND_CHECK_LOCS.pop();
+        		if cond_loc != None{
+					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    jmp .L{}\n", cond_loc.unwrap()));
+				}
+				else{compiler_panic("\"continue\" shoud be called inside a loop");}
+        	}
+        }
+        Statement::Unknown=>{
+        	// don't throw an error, but don't do anything, is met when statement is just "var;"
         }
         _ => {
         	compiler_panic(&format!("{:?} Statement Not Yet Implemented", statement));
@@ -976,9 +1116,11 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
 
 fn gen_function(function : &Function, asm_struct: &mut AssemblyStructure){
 	let mut variable_table = VarTable{
-		symbole_table: HashMap::new(),
+		symbole_table: Vec::new(),
 		stack_offset: 0,
 	};
+	variable_table.symbole_table.push(HashMap::new());
+
 	asm_struct.text.push(AssemblyStructureFunction{header: String::new(), body: String::new()});
 
 	asm_struct.text[asm_struct.function_index].header.push_str("\n.global ");
@@ -996,7 +1138,8 @@ fn gen_function(function : &Function, asm_struct: &mut AssemblyStructure){
 		let regs8 = vec!["dil", "sil", "dl", "cl", "r8b", "r9b"];
 		for i in 0..function.args.len(){
             variable_table.stack_offset -= get_offset(&function.args[i].var_type);
-		    variable_table.symbole_table.insert(function.args[i].name.clone(), VarInfo{var_type: function.args[i].var_type.clone(), offset: variable_table.stack_offset, struct_fields: Vec::new()});
+            let symbole_table_index = variable_table.symbole_table.len()-1;
+		    variable_table.symbole_table[symbole_table_index].insert(function.args[i].name.clone(), VarInfo{var_type: function.args[i].var_type.clone(), offset: variable_table.stack_offset, struct_fields: Vec::new()});
 		    match function.args[i].var_type{
 		    	Type::Char => {
 					asm_struct.text[asm_struct.function_index].body.push_str(&format!("    mov BYTE PTR [rbp {}], {}\n", variable_table.stack_offset, regs8[i]));
@@ -1093,12 +1236,11 @@ fn main(){
 	let input_file = &args[1];
 	let output_file = &args[2];
 	let input_file: &str = input_file;
-	let mut raw_data = fs::read_to_string(input_file).expect("Could not open file");
-	let mut i = 0;
+	let raw_data = fs::read_to_string(input_file).expect("Could not open file");
 	let mut data = raw_data.chars().peekable();
 	println!("raw data : \n{:?}", raw_data);
 
-	let tokens = ["int", "double", "char", "float", "bool", "return", ";", "{", "}", "(", ")", "[", "]", "+", "-", "*", "/", "=", "!", ",", "\'", "\"", "&", "true", "false", ".", "#", "define", "include", "<", ">", "if", "while", "for", "struct"];
+	let tokens = ["int", "double", "char", "float", "bool", "return", ";", "{", "}", "(", ")", "[", "]", "+", "-", "*", "/", "=", "!", ",", "\'", "\"", "&", "true", "false", ".", "#", "define", "include", "<", ">", "if", "while", "for", "struct", "break", "continue"];
 
 	let mut found_tokens:Vec<TOKEN> = Vec::new();
 
