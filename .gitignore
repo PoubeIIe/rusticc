@@ -8,3 +8,4 @@ tinycc
 Tests/tcc_tests
 Tests/tests2/assembled/*
 Tests/tests2/build/*
+Tests/tests2/Makefile

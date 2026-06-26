@@ -38,22 +38,23 @@ int main(int argc, char* argv[]){
     // no 34, 53, 56, 57, 58, 59, 62, 63, 65, 66, 68, 69, 74, 98, 99, 138, 139, 140, 141, 145
     int test_to_do = 0;
     while (fgets(buffer, sizeof(buffer), fp) != NULL) {
-		if (test_to_do == 1){
+		if (test_to_do == 10){
 			break;
 		}
     	if (is_c_file(buffer)){
-			printf("OUTPUT: %s", buffer);
+			// printf("Test N°%d:\n", test_to_do);
+			// printf("OUTPUT: %s", buffer);
 			char compile_cmd[128];
-        	sprintf(compile_cmd, "%s tests2/%.*s tests2/assembled/%.*ss", CC, (int)strlen(buffer)-1, buffer, (int)strlen(buffer)-2, buffer);
-			printf("BUILD COMMAND: %s\n", compile_cmd);
+        	sprintf(compile_cmd, "%s tests2/%.*s tests2/assembled/%.*ss > /dev/null 2>&1", CC, (int)strlen(buffer)-1, buffer, (int)strlen(buffer)-2, buffer);
+			// printf("BUILD COMMAND: %s\n", compile_cmd);
         	if (system(compile_cmd) == 0){
 				char assemble_cmd[128];
 	        	sprintf(assemble_cmd, "gcc tests2/assembled/%.*ss -o tests2/build/%.*s", (int)strlen(buffer)-2, buffer, (int)strlen(buffer)-3, buffer);
-				printf("ASSEMBLE COMMAND: %s\n", assemble_cmd);
+				// printf("ASSEMBLE COMMAND: %s\n", assemble_cmd);
 	        	if (system(assemble_cmd) == 0){
 					char execution_cmd[128];
 	        		sprintf(execution_cmd, "./tests2/build/%.*s", (int)strlen(buffer)-3, buffer);
-					printf("EXECUTION COMMAND: %s\n", execution_cmd);
+					// printf("EXECUTION COMMAND: %s\n", execution_cmd);
 	        		// system(execution_cmd);
 					
 					FILE *test_fp = popen(execution_cmd, "r");
@@ -64,7 +65,7 @@ int main(int argc, char* argv[]){
 
 					char expected_cmd[128];
 	        		sprintf(expected_cmd, "cat tests2/%.*sexpect", (int)strlen(buffer)-2, buffer);
-					printf("EXPECTED COMMAND: %s\n", expected_cmd);
+					// printf("EXPECTED COMMAND: %s\n", expected_cmd);
 					FILE *expected_fp = popen(expected_cmd, "r");
 				    if (expected_fp == NULL) {
 				        perror("popen failed");
@@ -80,14 +81,18 @@ int main(int argc, char* argv[]){
 				    		return 1;
 				    	}
 				    }
-				    printf("Test %.*s : passed\n", (int)strlen(buffer)-2, buffer);
+				    printf("Test \"%.*s\" : passed\n", (int)strlen(buffer)-3, buffer);
 				    // printf("buff : %s\n", program_out);
     				// while (fgets(buffer, sizeof(buffer), fp) != NULL) {
 
 				}
 			}
+			else{
+				printf("Test \"%.*s\" : failed at compilation\n", (int)strlen(buffer)-3, buffer);
+				return 1;
+			}
+			test_to_do++;
 		}
-		test_to_do++;
 	}
 
     pclose(fp);
