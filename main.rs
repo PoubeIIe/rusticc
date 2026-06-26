@@ -34,8 +34,6 @@ static mut LABEL_INDEX: i64 = 0;
 static mut BREAK_IDX_VEC: Vec<i64> = Vec::new();
 static mut LOOP_CHECK: Vec<bool> = Vec::new(); // used to track if we are in a loop
 static mut COND_CHECK_LOCS: Vec<i64> = Vec::new();
-static mut IN_A_BINARY: bool = false;
-static mut BINARY_WITH_POINTER: bool = false;
 
 
 fn tagging(token: &String, line: i64, column: i64) -> TOKEN{
@@ -915,8 +913,8 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
 			context.call_context = "right".to_string();
     		gen_expr(right, variable_table, asm_struct, context);
         	asm_struct.text[asm_struct.function_index].body.push("    pop rcx\n".to_string());
-        	match op{
-        		BinaryOp::PLUS=>{
+        	match op {
+        		BinaryOp::PLUS | BinaryOp::MINUS =>{
         			if context.pointer_in_binary {
         				println!("FOUND BINARY ADD WITH POINTER : {:?}", context.return_context.downcast_ref::<(String, Type)>());
         				context.pointer_in_binary = false;
@@ -951,6 +949,11 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
 	        				else{}
         				}
         			}
+        		}
+        		_=>{}
+        	}
+        	match op{
+        		BinaryOp::PLUS=>{
         			asm_struct.text[asm_struct.function_index].body.push("    add eax, ecx\n".to_string());
         		}
         		// TODO : implement pointer arithmetics like plus in minus too
