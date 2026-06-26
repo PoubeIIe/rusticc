@@ -3,4 +3,8 @@ main.c
 out.s
 out_cmp
 gf2
-Test/test
+Tests/test
+tinycc
+Tests/tcc_tests
+Tests/tests2/assembled/*
+Tests/tests2/build/*

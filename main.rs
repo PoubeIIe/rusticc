@@ -242,7 +242,7 @@ enum Expr {
 	Variable(String),
 	Binary(Box<Expr>,BinaryOp, Box<Expr>),
 	Call(String, Vec<Expr>),
-	Dereference(String),
+	Dereference(Box<Expr>),
 	AddressOf(String),
 	Struct(String, String),
 	SizeofType(Type),
@@ -254,6 +254,7 @@ enum Expr {
 #[derive(Debug, Clone, PartialEq)]
 enum Statement {
 	Declaration(Type, String, Expr),
+	MultiDeclaration(Vec<Statement>),
 	Return(Expr),
 	Call(String, Vec<Expr>),
 	Reassign(Expr, Expr),
@@ -407,6 +408,12 @@ fn parse_primary(token: &Vec<TOKEN>)->Expr{
 				let field_name = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string(), line: 0, column: 0}).name;
 				return Expr::Struct(primary.name.clone(), field_name);
 			}
+			else if get_token(token).token_type == "LBRACK"{
+				next_token();
+				let expr = parse_expression(token, 0);
+				expect(token, &TOKEN{name: "]".to_string(), token_type: "RBRACK".to_string(), line: 0, column: 0}).name;
+				return Expr::Dereference(Box::new(Expr::Binary(Box::new(Expr::Variable(primary.name.clone())), BinaryOp::PLUS, Box::new(expr))));
+			}
 			else{
 				return Expr::Variable(primary.name.clone());
 			}
@@ -439,7 +446,7 @@ fn parse_primary(token: &Vec<TOKEN>)->Expr{
 		}
 		"STAR" => {
 			let variable = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string(), line: 0, column: 0});
-			return Expr::Dereference(variable.name);
+			return Expr::Dereference(Box::new(Expr::Variable(variable.name)));
 		}
 		"ADDRESSOF" => {
 			let variable = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string(), line: 0, column: 0});
@@ -554,6 +561,7 @@ fn parse_expression(token: &Vec<TOKEN>, min_precedence: u8) -> Expr{
 fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 	let current_token = get_token(token);
 	next_token();
+	//  -----------------------DECLARATION--------------------------
 	if current_token.token_type == "TYPE"{
 		let mut var_type = parse_type(current_token);
 		// TODO : do this in parse_type
@@ -566,8 +574,26 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 		if get_token(&token).token_type == "ASSIGN"{
 			next_token();
 			expr = parse_expression(token, 0);
-			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
+			// expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
+			// TODO : support declaration like int a, b = 69; or int a = 69, b; 
+			if get_token(&token).token_type == "COMMA"{
+				let mut declt_vec = Vec::new();
+				declt_vec.push(Statement::Declaration(var_type.clone(), var_name.name, expr));
+				next_token();
+				while get_token(&token).token_type != "SEMICOLON" {
+					let var_name = expect(token, &TOKEN{name: "Any Name".to_string(), token_type: "NAME".to_string(), line: 0, column: 0});
+					expect(token, &TOKEN{name: "=".to_string(), token_type: "ASSIGN".to_string(), line: 0, column: 0});
+					expr = parse_expression(token, 0);
+					declt_vec.push(Statement::Declaration(var_type.clone(), var_name.name, expr));
+				}
+				expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
+				return Statement::MultiDeclaration(declt_vec);
+			}
+			else{
+				expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
+			}
 		}
+		// ------------------------ ARRAY DECL-----------------------------
 		else if get_token(&token).token_type == "LBRACK"{
 			next_token();
 			let size = get_token(&token).name.parse::<i64>().unwrap();
@@ -577,6 +603,7 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 			var_type = Type::Array(Box::new(var_type), size);
 			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
 		}
+		//------------------------------------------------------------
 		else if get_token(&token).token_type == "SEMICOLON"{
 			next_token();
 		}
@@ -588,6 +615,7 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 		return a;
 
 	}
+	// ---------------------------------------
 	else if current_token.token_type == "RETURN"{
 		let expression = parse_expression(token, 0);
 		println!("Expression : \n{:?}", expression);
@@ -868,7 +896,7 @@ fn store_type(var_type: &Type, offset: i64, asm_struct: &mut AssemblyStructure){
 			asm_struct.text[asm_struct.function_index].body.push(format!("    mov QWORD PTR [rbp {}], rax\n", offset));
 		}
 		Type::Array(_,_) => {
-			println!("array declaraion, do nothing");
+			println!("array declaration, do nothing");
 		}
 		// Type::Struct(name) =>{
 		// 	// println!("AAAAAAAAAAA");
@@ -1010,21 +1038,32 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
         	asm_struct.data.push_str(&format!("    .string \"{}\"\n", string));
         	asm_struct.text[asm_struct.function_index].body.push(format!("    mov rax, OFFSET FLAT: .LC{}\n", index));
         },
-        Expr::Dereference(name)=>{
-    		let variable = get_scope_variable(variable_table, name);
-        	// println!("dereferincig type : {:?}", variable.unwrap().var_type);
-        	match variable.as_ref().unwrap().var_type{
-        		Type::Pointer(_)=>{
-		        	asm_struct.text[asm_struct.function_index].body.push(format!("    mov rax, QWORD PTR [rbp {}]\n", variable.unwrap().offset));
-		        	asm_struct.text[asm_struct.function_index].body.push(format!("    movzx eax, BYTE PTR [rax]\n"));
+        Expr::Dereference(var)=>{
+        	let mut var_name = String::new();
+        	match &**var{
+        		Expr::Variable(variable_name)=>{
+        			var_name = variable_name.clone();
+	        		let variable = get_scope_variable(variable_table, &var_name);
+		        	// println!("dereferincig type : {:?}", variable.unwrap().var_type);
+		        	match variable.as_ref().unwrap().var_type{
+		        		Type::Pointer(_)=>{
+				        	asm_struct.text[asm_struct.function_index].body.push(format!("    mov rax, QWORD PTR [rbp {}]\n", variable.unwrap().offset));
+				        	asm_struct.text[asm_struct.function_index].body.push(format!("    movzx eax, BYTE PTR [rax]\n"));
+		        		}
+		        		Type::Array(_,_)=>{
+				        	asm_struct.text[asm_struct.function_index].body.push(format!("    movzx eax, BYTE PTR [rbp {}]\n", variable.unwrap().offset));
+		        		}
+		        		_=>{
+		        			compiler_panic("Cannot dereference this type");
+		        		}
+		        	}
+        		},
+        		Expr::Binary(left, op, right)=>{
+        			gen_expr(var, variable_table, asm_struct, context);
+				    asm_struct.text[asm_struct.function_index].body.push(format!("    movzx eax, BYTE PTR [rax]\n"));
         		}
-        		Type::Array(_,_)=>{
-		        	asm_struct.text[asm_struct.function_index].body.push(format!("    movzx eax, BYTE PTR [rbp {}]\n", variable.unwrap().offset));
-        		}
-        		_=>{
-        			compiler_panic("Cannot dereference this type");
-        		}
-        	}
+        		_=>{compiler_panic(&format!("Expected a variable to dereference, got {:?}", var));}}
+    		
         	asm_struct.text[asm_struct.function_index].body.push(format!("    movsx eax, al\n"));
         }
         Expr::AddressOf(_) => {
@@ -1243,6 +1282,11 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
 					asm_struct.text[asm_struct.function_index].body.push(format!("    jmp .L{}\n", cond_loc.unwrap()));
 				}
 				else{compiler_panic("\"continue\" shoud be called inside a loop");}
+        	}
+        }
+        Statement::MultiDeclaration(declt_vec)=>{
+        	for decl in declt_vec{
+        		gen_statement(decl, variable_table, asm_struct, context);
         	}
         }
         Statement::Unknown=>{
