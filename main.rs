@@ -239,6 +239,7 @@ enum Expr {
 	CharLiteral(u8),
 	StringLiteral(String, i64),
     BoolLiteral(bool),
+    Negat(Box<Expr>),
 	Variable(String),
 	Binary(Box<Expr>,BinaryOp, Box<Expr>),
 	Call(String, Vec<Expr>),
@@ -397,6 +398,9 @@ fn parse_primary(token: &Vec<TOKEN>)->Expr{
 	match primary.token_type.as_str() {
 		"NUMBER" => {
 			return Expr::IntLiteral(primary.name.parse::<i64>().unwrap());
+		},
+		"MINUS" =>{
+			return Expr::Negat(Box::new(parse_expression(token, 0)));
 		},
 		"NAME" => {
 			if get_token(token).token_type == "LPAREN"{
@@ -749,15 +753,24 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 		expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
 		let i_reassigment = parse_statement(token);
 		expect(token, &TOKEN{name: ")".to_string(), token_type: "RPAREN".to_string(), line: 0, column: 0});
-		expect(token, &TOKEN{name: "{".to_string(), token_type: "LBRACE".to_string(), line: 0, column: 0});
 		let mut for_loop_body = Vec::new();
-		while get_token(token).token_type != "RBRACE"{
+		let mut single_statement_for = false;
+		if get_token(&token).token_type == "LBRACE"{
+			// expect(token, &TOKEN{name: "{".to_string(), token_type: "LBRACE".to_string(), line: 0, column: 0});
+			while get_token(token).token_type != "RBRACE"{
+				for_loop_body.push(parse_statement(token));
+			}
+		}
+		else {
+			single_statement_for = true;
 			for_loop_body.push(parse_statement(token));
 		}
 		for_loop_body.push(i_reassigment);
 		let idx = update_label_index();
 		block_scope_body.push(Statement::While(condition, for_loop_body, idx));
-		expect(token, &TOKEN{name: "}".to_string(), token_type: "RBRACE".to_string(), line: 0, column: 0});
+		if !single_statement_for {
+			expect(token, &TOKEN{name: "}".to_string(), token_type: "RBRACE".to_string(), line: 0, column: 0});
+		}
 		return Statement::BlockScope(block_scope_body);
 	}
 	else if current_token.token_type == "BREAK"{
@@ -1104,6 +1117,10 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
         Expr::SizeofType(var_type)=>{
         	let size = get_offset(&var_type);
 		    asm_struct.text[asm_struct.function_index].body.push(format!("    mov eax, {}\n", size));
+        }
+        Expr::Negat(expression)=>{
+    		gen_expr(expression, variable_table, asm_struct, context);
+		    asm_struct.text[asm_struct.function_index].body.push(format!("    neg eax\n"));
         }
         Expr::Unknown => {
         	compiler_panic("Unknown expression");
