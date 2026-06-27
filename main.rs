@@ -632,6 +632,15 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
 			return Statement::Call(call.0, call.1);
 		}
+		else if get_token(token).token_type == "LBRACK"{
+			next_token();
+			let offset_expr = parse_expression(token, 0);
+			expect(token, &TOKEN{name: "]".to_string(), token_type: "RBRACK".to_string(), line: 0, column: 0});
+			expect(token, &TOKEN{name: "=".to_string(), token_type: "ASSIGN".to_string(), line: 0, column: 0});
+			let expr = parse_expression(token, 0);
+			expect(token, &TOKEN{name: ";".to_string(), token_type: "SEMICOLON".to_string(), line: 0, column: 0});
+			return Statement::Reassign(Expr::Dereference(Box::new(Expr::Binary(Box::new(Expr::Variable(current_token.name.clone())), BinaryOp::PLUS, Box::new(offset_expr)))), expr)
+		}
 		else if get_token(token).token_type == "ASSIGN"{
 			next_token();
 			let expr = parse_expression(token, 0);
@@ -756,6 +765,7 @@ fn parse_statement(token: &Vec<TOKEN>) -> Statement{
 		let mut for_loop_body = Vec::new();
 		let mut single_statement_for = false;
 		if get_token(&token).token_type == "LBRACE"{
+			next_token();
 			// expect(token, &TOKEN{name: "{".to_string(), token_type: "LBRACE".to_string(), line: 0, column: 0});
 			while get_token(token).token_type != "RBRACE"{
 				for_loop_body.push(parse_statement(token));
@@ -957,6 +967,7 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
         	match op {
         		BinaryOp::PLUS | BinaryOp::MINUS =>{
         			if context.pointer_in_binary {
+						// asm_struct.text[asm_struct.function_index].body.push("----------------------------------------".to_string());
         				println!("FOUND BINARY ADD WITH POINTER : {:?}", context.return_context.downcast_ref::<(String, Type)>());
         				context.pointer_in_binary = false;
         				if let Some(ret_ctx) = context.return_context.downcast_ref::<(String, Type)>(){
@@ -965,7 +976,7 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
 	        					// asm_struct.text[asm_struct.function_index].body.push("    push rax\n".to_string());
 	        					asm_struct.text[asm_struct.function_index].body.push("    push rcx\n".to_string()); // save pointer to stack
 	        					match &context.return_context.downcast_ref::<(String, Type)>().unwrap().1{
-									Type::Pointer(var_type)=>{
+									Type::Pointer(var_type)|Type::Array(var_type, _)=>{
 	        							asm_struct.text[asm_struct.function_index].body.push(format!("    mov ecx, {} \n", get_offset(&var_type))); // get size of type of pointer
 									}
 									_=>{compiler_panic("THIS SHOULD NEVER HAPPEN");}
@@ -978,7 +989,7 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
 	        					println!("AND ITS THE RIGHT ONE (THE POINTER) : {:?}", context.return_context.downcast_ref::<(String, Type)>().unwrap().1);
 								asm_struct.text[asm_struct.function_index].body.push("    push rax\n".to_string()); // save pointer to stack
 								match &context.return_context.downcast_ref::<(String, Type)>().unwrap().1{
-									Type::Pointer(var_type)=>{
+									Type::Pointer(var_type)|Type::Array(var_type, _)=>{
 	        							asm_struct.text[asm_struct.function_index].body.push(format!("    mov rax, {} \n", get_offset(&var_type))); // get size of type of pointer
 									}
 									_=>{compiler_panic("THIS SHOULD NEVER HAPPEN");}
@@ -1039,9 +1050,11 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
     		let var_info = get_scope_variable(variable_table, name);
         	if context.in_a_binary {
         		// println!("IN A BINARY FROM VARIABLE THINGY");
-        		match var_info.as_ref().unwrap().var_type{Type::Pointer(_)=>{context.pointer_in_binary = true; context.return_context = Box::new((context.call_context.clone(), var_info.as_ref().unwrap().var_type.clone()))}, _=>{}}
+        		match var_info.as_ref().unwrap().var_type{Type::Pointer(_)=>{context.pointer_in_binary = true; context.return_context = Box::new((context.call_context.clone(), var_info.as_ref().unwrap().var_type.clone()))},Type::Array(_,_)=> {context.return_context = Box::new((context.call_context.clone(), var_info.as_ref().unwrap().var_type.clone()))},_=>{}}
         	}
-        	get_type(&var_info.as_ref().unwrap().var_type, var_info.as_ref().unwrap().offset, asm_struct);
+        	match var_info.as_ref().unwrap().var_type{
+        		Type::Array(_,_)=>{},_=>{get_type(&var_info.as_ref().unwrap().var_type, var_info.as_ref().unwrap().offset, asm_struct);}
+        	}
         },
         Expr::Call(name, args) => {
         	gen_call(name, args, variable_table, asm_struct, context);
@@ -1064,6 +1077,7 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
 				        	asm_struct.text[asm_struct.function_index].body.push(format!("    movzx eax, BYTE PTR [rax]\n"));
 		        		}
 		        		Type::Array(_,_)=>{
+		        			println!("found an arrya var ");
 				        	asm_struct.text[asm_struct.function_index].body.push(format!("    movzx eax, BYTE PTR [rbp {}]\n", variable.unwrap().offset));
 		        		}
 		        		_=>{
@@ -1072,8 +1086,24 @@ fn gen_expr(expr: &Expr, variable_table: &mut VarTable, asm_struct: &mut Assembl
 		        	}
         		},
         		Expr::Binary(left, op, right)=>{
+        			println!("is it done in here? : {:?}", var);
         			gen_expr(var, variable_table, asm_struct, context);
-				    asm_struct.text[asm_struct.function_index].body.push(format!("    movzx eax, BYTE PTR [rax]\n"));
+        			let mut variable = None;
+        			if context.return_context.downcast_ref::<(String, Type)>().unwrap().0 == "left"{
+        				match &**left{Expr::Variable(name) =>{variable = get_scope_variable(variable_table, &name);},_=>{compiler_panic("Something happened and i was too lazy to write an erro message")}}
+        			}
+        			else if context.return_context.downcast_ref::<(String, Type)>().unwrap().0 == "right"{
+        				match &**right{Expr::Variable(name) =>{variable = get_scope_variable(variable_table, &name);},_=>{compiler_panic("Something happened and i was too lazy to write an erro message")}}
+        			}
+        			else{}
+        			match variable.as_ref().unwrap().var_type{
+        				Type::Array(_, _)=>{
+        					asm_struct.text[asm_struct.function_index].body.pop();
+        					//TODO USE THE CORRECT ONE HERE (BYTE PTR / DWORD PTR) based on arr type
+				        	asm_struct.text[asm_struct.function_index].body.push(format!("    mov eax, DWORD PTR [rbp {}+rax]\n", variable.unwrap().offset));
+        				},_=>{}
+        			}
+				    // asm_struct.text[asm_struct.function_index].body.push(format!("    movzx eax, BYTE PTR [rax]\n"));
         		}
         		_=>{compiler_panic(&format!("Expected a variable to dereference, got {:?}", var));}}
     		
@@ -1187,6 +1217,36 @@ fn gen_statement(statement: &Statement, variable_table: &mut VarTable, asm_struc
             		}
 
         			// error("reassigning structs not yet implemented");
+        		},
+        		// TODO: finish reassigning arrays index 
+        		Expr::Dereference(expression)=>{
+        			println!("Trying to dereference reassign this : {:?}", expression);
+        			match &**expression{
+	        			Expr::Binary(left, op, right)=>{
+							gen_expr(expression, variable_table, asm_struct, context);
+		        			let mut variable = None;
+		        			if context.return_context.downcast_ref::<(String, Type)>().unwrap().0 == "left"{
+		        				match &**left{Expr::Variable(name) =>{variable = get_scope_variable(variable_table, &name);},_=>{compiler_panic("Something happened and i was too lazy to write an erro message")}}
+		        			}
+		        			else if context.return_context.downcast_ref::<(String, Type)>().unwrap().0 == "right"{
+		        				match &**right{Expr::Variable(name) =>{variable = get_scope_variable(variable_table, &name);},_=>{compiler_panic("Something happened and i was too lazy to write an erro message")}}
+		        			}
+		        			else{}
+		        			match variable.as_ref().unwrap().var_type{
+		        				Type::Array(_, _)=>{
+		        					asm_struct.text[asm_struct.function_index].body.pop();
+						        	asm_struct.text[asm_struct.function_index].body.push(format!("    push rax\n"));
+					        		gen_expr(expr, variable_table, asm_struct, context);
+						        	asm_struct.text[asm_struct.function_index].body.push(format!("    pop rcx\n"));
+		        					//TODO USE THE CORRECT ONE HERE (BYTE PTR / DWORD PTR) based on arr type
+						        	asm_struct.text[asm_struct.function_index].body.push(format!("    mov DWORD PTR [rbp {}+rcx], eax\n", variable.unwrap().offset));
+		        				},_=>{}
+		        			}
+						    // asm_struct.text[asm_struct.function_index].body.push(format!("    movzx eax, BYTE PTR [rax]\n"));
+		        		}
+		        		_=> {}
+	        		}
+					// asm_struct.text[asm_struct.function_index].body.push("----------------------------------------".to_string());
         		}
         		_=>{
         			compiler_panic(&format!("Can't reassign a {:?}", variable));
